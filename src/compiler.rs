@@ -16,6 +16,7 @@ enum Operations {
     OpMultiply,
     OpDivide,
     NoOp,
+    OpGrouping,
 }
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
 enum Precedence {
@@ -30,6 +31,7 @@ enum Precedence {
     PrecUnary,
     PrecCall,
     PrecPrimary,
+    PrecGrouping,
 }
 
 enum Instruction {
@@ -56,45 +58,28 @@ fn prec_of(operation: &Operations) -> Precedence {
         OpDivide => PrecFactor,
         OpConstant => PrecPrimary,
         NoOp => PrecNone,
+        OpGrouping => PrecNone,
         _ => panic!("not yet implemented..."),
     }
 }
 
-fn assert_is_constant(maybe_token: Option<Token>) -> Option<Value> {
-    if let Some(token) = maybe_token {
-        match token {
-            Token::TkNum(val) => return Some(val),
-            _ => return None,
-        };
-    } else {
-        panic!("Token parsing error");
+fn assert_is_constant(token: Token) -> Value {
+    match token {
+        Token::TkNum(val) => val,
+        _ => panic!("Expected a valid constant, received {:?}", token),
     }
 }
 
-fn assert_is_operator(maybe_token: Option<Token>) -> Token {
-    if let Some(token) = maybe_token {
-        use Token::*;
-        assert!(match token {
-            TkPlus | TkMinus | TkStar | TkSlash => true,
-            _ => false,
-        });
-        return token;
-    } else {
-        return Token::TkErr;
-    };
+fn assert_is_operator(token: Token) -> Token {
+    use Token::*;
+    assert!(match token {
+        TkPlus | TkMinus | TkStar | TkSlash => true,
+        _ => false,
+    });
+    return token;
 }
 
-fn make_constant(maybe_val: Option<Value>, compiler: &mut Compiler) -> Result<u8, &'static str> {
-    if let Some(value) = maybe_val {
-        let idx = compiler.constants.len();
-        compiler.constants.push(value);
-        return Ok(idx.try_into().unwrap());
-    } else {
-        return Err("Failed to allocate new constant ");
-    }
-}
-
-fn token_to_operator(token: Token) -> Operations {
+fn token_to_operator(token: &Token) -> Operations {
     use Operations::*;
     use Token::*;
     return match token {
@@ -102,12 +87,19 @@ fn token_to_operator(token: Token) -> Operations {
         TkMinus => OpSubtract,
         TkStar => OpMultiply,
         TkSlash => OpDivide,
+        TkOpenParen => OpGrouping,
         _ => panic!("not a valid operator token"),
     };
 }
 
-fn emit_constant(operation: Operations, maybe_val: Option<Value>, compiler: &mut Compiler) {
-    if let Ok(idx) = make_constant(maybe_val, compiler) {
+fn make_constant(val: Value, compiler: &mut Compiler) -> Result<u8, &'static str> {
+    let idx = compiler.constants.len();
+    compiler.constants.push(val);
+    return Ok(idx.try_into().unwrap());
+}
+
+fn emit_constant(operation: Operations, val: Value, compiler: &mut Compiler) {
+    if let Ok(idx) = make_constant(val, compiler) {
         compiler.code.push(Instruction::Operation(operation));
         compiler.code.push(Instruction::ConstantIdx(idx));
     } else {
@@ -128,10 +120,30 @@ fn top_of(stack: &Vec<Operations>) -> &Operations {
     }
 }
 
+fn is_group_start(token: &Token) -> bool {
+    match token {
+        Token::TkOpenParen => true,
+        _ => false,
+    }
+}
+
+fn is_group_end(token: &Token) -> bool {
+    match token {
+        Token::TkCloseParen => true,
+        _ => false,
+    }
+}
+
 fn dump_stack(stack: &mut Vec<Operations>, compiler: &mut Compiler) -> () {
+    // dump until we hit a grouing operation, then pop that and exit
     while stack.len() > 0 {
         if let Some(operation) = stack.pop() {
-            emit_operation(operation, compiler);
+            match operation {
+                Operations::OpGrouping => {
+                    break;
+                }
+                _ => emit_operation(operation, compiler),
+            }
         }
     }
 }
@@ -168,32 +180,40 @@ impl<'a> Compiler<'a> {
         let mut operand_phase: bool = true;
         loop {
             let maybe_token = self.parser.parse_next();
-            match &maybe_token {
-                Some(token) => (),
+            match maybe_token {
+                Some(token) => {
+                    // check if the token is a grouping
+                    if is_group_start(&token) {
+                        operator_stack.push(token_to_operator(&token));
+                        continue;
+                    } else if is_group_end(&token) {
+                        dump_stack(&mut operator_stack, self);
+                        continue;
+                    }
+                    if operand_phase {
+                        let val = assert_is_constant(token);
+                        emit_constant(Operations::OpConstant, val, self);
+                        operand_phase = false;
+                    } else {
+                        let operator_token: Token = assert_is_operator(token);
+                        let operator = token_to_operator(&operator_token);
+                        let top_of_operator_stack: &Operations = top_of(&operator_stack);
+                        // if the new operator is of a higher precedence than the last, push it onto the
+                        // stack
+                        if prec_of(&operator) > prec_of(top_of_operator_stack) {
+                            operator_stack.push(operator);
+                        } else {
+                            dump_stack(&mut operator_stack, self);
+                            operator_stack.push(operator);
+                        }
+                        operand_phase = true;
+                    }
+                }
                 None => {
                     dump_stack(&mut operator_stack, self);
                     debug_print_expression(&self);
                     break;
                 }
-            }
-            if operand_phase {
-                // optionally extract the value from the token
-                let maybe_val = assert_is_constant(maybe_token);
-                emit_constant(Operations::OpConstant, maybe_val, self);
-                operand_phase = false;
-            } else {
-                let operator_token: Token = assert_is_operator(maybe_token);
-                let operator = token_to_operator(operator_token);
-                let top_of_operator_stack: &Operations = top_of(&operator_stack);
-                // if the new operator is of a higher precedence than the last, push it onto the
-                // stack
-                if prec_of(&operator) > prec_of(top_of_operator_stack) {
-                    operator_stack.push(operator);
-                } else {
-                    dump_stack(&mut operator_stack, self);
-                    operator_stack.push(operator);
-                }
-                operand_phase = true;
             }
         }
     }

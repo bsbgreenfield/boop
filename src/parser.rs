@@ -11,6 +11,8 @@ pub enum Token {
     TkStar,
     TkSlash,
     TkSemicolon,
+    TkOpenParen,
+    TkCloseParen,
     TkEof,
     TkErr,
 }
@@ -25,6 +27,8 @@ impl Debug for Token {
             Token::TkStar => write!(f, "TkStar"),
             Token::TkSlash => write!(f, "TkSlash"),
             Token::TkSemicolon => write!(f, "TkSemicolon"),
+            Token::TkOpenParen => write!(f, "TkOpenParen"),
+            Token::TkCloseParen => write!(f, "TkCloseParen"),
             Token::TkEof => write!(f, "TkEof"),
             Token::TkErr => write!(f, "TkErr"),
         }
@@ -62,7 +66,12 @@ impl<'a> Parser<'a> {
                         '=' => TkEquals,
                         '*' => TkStar,
                         '/' => TkSlash,
-                        _ => TkEof,
+                        '(' => TkOpenParen,
+                        ')' => TkCloseParen,
+                        _ => {
+                            println!("tried to parse unknown symbol: {}", char);
+                            TkErr
+                        }
                     }
                 }
                 return Some(token);
