@@ -8,6 +8,8 @@ pub enum Token {
     TkEquals,
     TkPlus,
     TkMinus,
+    TkStar,
+    TkSlash,
     TkSemicolon,
     TkEof,
     TkErr,
@@ -20,6 +22,8 @@ impl Debug for Token {
             Token::TkEquals => write!(f, "TkEquals"),
             Token::TkPlus => write!(f, "TKPlus"),
             Token::TkMinus => write!(f, "TkMInus"),
+            Token::TkStar => write!(f, "TkStar"),
+            Token::TkSlash => write!(f, "TkSlash"),
             Token::TkSemicolon => write!(f, "TkSemicolon"),
             Token::TkEof => write!(f, "TkEof"),
             Token::TkErr => write!(f, "TkErr"),
@@ -42,25 +46,30 @@ impl<'a> Parser<'a> {
 
     pub fn parse_next(&mut self) -> Option<Token> {
         use Token::*;
-        self.code_iter.next().map(|item| {
+        let maybe_next_item = self.code_iter.next();
+        if let Some(item) = maybe_next_item {
+            // if there is a next item, try and parse a number from it.
             if let Some(num) = Parser::<'a>::try_parse_num(item) {
-                let val = Value::new(ValType::ValNumType, ValData::ValNum(num));
-                TkNum(val)
+                return Some(TkNum(Value::new(ValType::ValNumType, ValData::ValNum(num))));
+                // othewise, parse the token normally
             } else {
-                let chars = item.chars();
-                let mut other_token: Token = TkErr;
-                for char in chars {
-                    other_token = match char {
+                let mut token = TkErr;
+                for char in item.chars() {
+                    token = match char {
                         '+' => TkPlus,
                         '-' => TkMinus,
                         ';' => TkSemicolon,
                         '=' => TkEquals,
+                        '*' => TkStar,
+                        '/' => TkSlash,
                         _ => TkEof,
-                    };
+                    }
                 }
-                return other_token;
+                return Some(token);
             }
-        })
+        } else {
+            return None;
+        }
     }
 
     fn try_parse_num(item: &str) -> Option<i32> {

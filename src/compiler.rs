@@ -1,4 +1,5 @@
 #![allow(unused)]
+use core::fmt;
 use core::panic;
 use std::{collections::hash_map, mem};
 
@@ -7,6 +8,7 @@ use crate::{
     value::{ValData, Value},
 };
 
+#[derive(Debug)]
 enum Operations {
     OpConstant,
     OpAdd,
@@ -33,6 +35,15 @@ enum Precedence {
 enum Instruction {
     Operation(Operations),
     ConstantIdx(u8),
+}
+
+impl fmt::Debug for Instruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Instruction::Operation(op) => write!(f, "Operation({:?})", op),
+            Instruction::ConstantIdx(idx) => write!(f, "ConstantIdx({})", idx),
+        }
+    }
 }
 
 fn prec_of(operation: &Operations) -> Precedence {
@@ -62,10 +73,9 @@ fn assert_is_constant(maybe_token: Option<Token>) -> Option<Value> {
 
 fn assert_is_operator(maybe_token: Option<Token>) -> Token {
     if let Some(token) = maybe_token {
+        use Token::*;
         assert!(match token {
-            Token::TkPlus => true,
-            Token::TkEquals => true,
-            Token::TkMinus => true,
+            TkPlus | TkMinus | TkStar | TkSlash => true,
             _ => false,
         });
         return token;
@@ -90,6 +100,8 @@ fn token_to_operator(token: Token) -> Operations {
     return match token {
         TkPlus => OpAdd,
         TkMinus => OpSubtract,
+        TkStar => OpMultiply,
+        TkSlash => OpDivide,
         _ => panic!("not a valid operator token"),
     };
 }
@@ -112,17 +124,28 @@ fn top_of(stack: &Vec<Operations>) -> &Operations {
     if length == 0 {
         &Operations::NoOp
     } else {
-        &stack[length]
+        &stack[length - 1]
     }
 }
 
-fn dump_stack(mut stack: Vec<Operations>, compiler: &mut Compiler) -> Vec<Operations> {
+fn dump_stack(stack: &mut Vec<Operations>, compiler: &mut Compiler) -> () {
     while stack.len() > 0 {
         if let Some(operation) = stack.pop() {
             emit_operation(operation, compiler);
         }
     }
-    stack
+}
+
+fn debug_print_expression(compiler: &Compiler) {
+    for instruction in &compiler.code {
+        match instruction {
+            Instruction::Operation(op) => match op {
+                Operations::OpConstant => print!("{:?}: ", op),
+                _ => println!("{:?}", op),
+            },
+            Instruction::ConstantIdx(idx) => println!("{:?}", idx),
+        };
+    }
 }
 
 pub struct Compiler<'a> {
@@ -142,13 +165,22 @@ impl<'a> Compiler<'a> {
 
     pub fn expression(&mut self) -> () {
         let mut operator_stack: Vec<Operations> = Vec::with_capacity(8);
-        let operand_phase: bool = true;
+        let mut operand_phase: bool = true;
         loop {
             let maybe_token = self.parser.parse_next();
+            match &maybe_token {
+                Some(token) => (),
+                None => {
+                    dump_stack(&mut operator_stack, self);
+                    debug_print_expression(&self);
+                    break;
+                }
+            }
             if operand_phase {
                 // optionally extract the value from the token
                 let maybe_val = assert_is_constant(maybe_token);
                 emit_constant(Operations::OpConstant, maybe_val, self);
+                operand_phase = false;
             } else {
                 let operator_token: Token = assert_is_operator(maybe_token);
                 let operator = token_to_operator(operator_token);
@@ -158,8 +190,10 @@ impl<'a> Compiler<'a> {
                 if prec_of(&operator) > prec_of(top_of_operator_stack) {
                     operator_stack.push(operator);
                 } else {
-                    operator_stack = dump_stack(operator_stack, self);
+                    dump_stack(&mut operator_stack, self);
+                    operator_stack.push(operator);
                 }
+                operand_phase = true;
             }
         }
     }
