@@ -1,7 +1,9 @@
 #![allow(unused)]
+use core::panic;
 use std::{
     error::Error,
     fmt::Debug,
+    iter::Peekable,
     str::{Chars, SplitWhitespace},
 };
 
@@ -39,11 +41,13 @@ impl Debug for Token {
     }
 }
 
-fn get_num_from_chars(first_char: char, char_iter: &mut Chars) -> Option<i32> {
+fn get_num_from_chars(first_char: char, char_iter: &mut Peekable<Chars>) -> Option<i32> {
     let mut result_string = String::from(first_char);
-    while let Some(next_char) = char_iter.next() {
+    while let Some(next_char) = char_iter.peek() {
+        // if the next char is numeric, add it to the number
+        // otherwise, break and evaluate the number
         match next_char {
-            '1'..='9' => result_string.push(next_char),
+            '0'..='9' => result_string.push(char_iter.next().unwrap()),
             _ => break,
         }
     }
@@ -53,8 +57,19 @@ fn get_num_from_chars(first_char: char, char_iter: &mut Chars) -> Option<i32> {
     }
 }
 
-fn try_parse_num(char: char, char_iter: &mut Chars) -> Option<i32> {
+fn try_parse_num(char: char, char_iter: &mut Peekable<Chars>) -> Option<i32> {
     match char {
+        '0' => {
+            if let Some(next_char) = char_iter.peek() {
+                match next_char {
+                    ' ' => Some(0),
+                    '0'..='9' => panic!("remove the leading 0 in the number"),
+                    _ => panic!("unexpected token {}", next_char),
+                }
+            } else {
+                None
+            }
+        }
         '1'..='9' => {
             return get_num_from_chars(char, char_iter);
         }
@@ -70,7 +85,7 @@ fn try_parse_num(char: char, char_iter: &mut Chars) -> Option<i32> {
     }
 }
 
-fn skip_whitespace(iter: &mut Chars) -> Option<char> {
+fn skip_whitespace(iter: &mut Peekable<Chars>) -> Option<char> {
     while let Some(char) = iter.next() {
         if char == ' ' {
             continue;
@@ -83,21 +98,20 @@ fn skip_whitespace(iter: &mut Chars) -> Option<char> {
 
 pub struct Parser<'a> {
     code_text: &'a str,
-    code_iter: Chars<'a>,
+    code_iter: Peekable<Chars<'a>>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(input: &'a str) -> Self {
         Parser {
             code_text: input,
-            code_iter: input.chars(),
+            code_iter: input.chars().peekable(),
         }
     }
     pub fn parse_next(&mut self) -> Option<Token> {
         use Token::*;
         // call code_iter.next() until either we get a character or we get None
         let maybe_next_char: Option<char> = skip_whitespace(&mut self.code_iter);
-        println!("{:?}", maybe_next_char);
         // if we get a character, check if its a number, then check if its something else
         if let Some(char) = maybe_next_char {
             if let Some(number) = try_parse_num(char, &mut self.code_iter) {
