@@ -104,6 +104,32 @@ fn try_parse_num(char: char, char_iter: &mut Peekable<Chars>) -> Option<i32> {
     }
 }
 
+fn match_keyword(ending: &str, char_iter: &mut Peekable<Chars>) -> Option<Token> {
+    for i in 1..(ending.len()) {
+        if char_iter.next() != ending.chars().nth(i) {
+            return None;
+        }
+    }
+    None
+}
+
+fn try_parse_keyword(char: char, char_iter: &mut Peekable<Chars>) -> Option<Token> {
+    match char {
+        't' => {
+            return match_keyword("true", char_iter);
+        }
+        'f' => match char_iter.peek() {
+            Some(next_char) => match next_char {
+                'a' => return match_keyword("false", char_iter),
+                'o' => return match_keyword("for", char_iter),
+                _ => return None,
+            },
+            None => None,
+        },
+        _ => None,
+    }
+}
+
 fn skip_whitespace(iter: &mut Peekable<Chars>) -> Option<char> {
     while let Some(char) = iter.next() {
         if char == ' ' {
