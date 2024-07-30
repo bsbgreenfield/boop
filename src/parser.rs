@@ -23,6 +23,25 @@ pub enum Token {
     TkErr,
 }
 
+impl PartialEq for Token {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::TkNum(val), Self::TkNum(other_val)) => val == other_val,
+            (Self::TkEquals, Self::TkEquals)
+            | (Self::TkPlus, Self::TkPlus)
+            | (Self::TkMinus, Self::TkMinus)
+            | (Self::TkStar, Self::TkStar)
+            | (Self::TkSlash, Self::TkSlash)
+            | (Self::TkSemicolon, Self::TkSemicolon)
+            | (Self::TkOpenParen, Self::TkOpenParen)
+            | (Self::TkCloseParen, Self::TkCloseParen)
+            | (Self::TkEof, Self::TkEof)
+            | (Self::TkErr, Self::TkErr) => true,
+            _ => false,
+        }
+    }
+}
+
 impl Debug for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -115,10 +134,8 @@ impl<'a> Parser<'a> {
         // if we get a character, check if its a number, then check if its something else
         if let Some(char) = maybe_next_char {
             if let Some(number) = try_parse_num(char, &mut self.code_iter) {
-                return Some(TkNum(Value::new(
-                    ValType::ValNumType,
-                    ValData::ValNum(number),
-                )));
+                println!("Token: {}", number);
+                return Some(TkNum(Value::from_num(number)));
             } else {
                 let token = match char {
                     '+' => TkPlus,
@@ -134,9 +151,83 @@ impl<'a> Parser<'a> {
                         TkErr
                     }
                 };
+                println!("Token: {:?}", token);
                 return Some(token);
             }
         }
         return None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_everything(parser: &mut Parser, token_buffer: &mut Vec<Token>) {
+        loop {
+            match parser.parse_next() {
+                Some(token) => token_buffer.push(token),
+                None => break,
+            }
+        }
+    }
+
+    #[test]
+    fn parse_a_single_number() {
+        let mut token_buffer: Vec<Token> = Vec::new();
+        let mut parser = Parser::new("1");
+        parse_everything(&mut parser, &mut token_buffer);
+        assert_eq!(&vec![Token::TkNum(Value::from_num(1))], &token_buffer);
+    }
+
+    #[test]
+    fn parse_a_longer_number() {
+        let mut token_buffer: Vec<Token> = Vec::new();
+        let mut parser = Parser::new("12345");
+        parse_everything(&mut parser, &mut token_buffer);
+
+        assert_eq!(&vec![Token::TkNum(Value::from_num(12345))], &token_buffer);
+    }
+
+    #[test]
+    fn parse_num_with_parens() {
+        let mut token_buffer: Vec<Token> = Vec::new();
+        let mut parser = Parser::new("(123)");
+        parse_everything(&mut parser, &mut token_buffer);
+
+        assert_eq!(
+            &vec![
+                Token::TkOpenParen,
+                Token::TkNum(Value::from_num(123)),
+                Token::TkCloseParen
+            ],
+            &token_buffer
+        );
+    }
+
+    #[test]
+    fn parse_an_arithmatic_expression() {
+        let mut token_buffer: Vec<Token> = Vec::new();
+        let mut parser = Parser::new("0 * (1 * 2 * (3 + 4))");
+        parse_everything(&mut parser, &mut token_buffer);
+        use Token::*;
+        assert_eq!(
+            &vec![
+                TkNum(Value::from_num(0)),
+                TkStar,
+                TkOpenParen,
+                TkNum(Value::from_num(1)),
+                TkStar,
+                TkNum(Value::from_num(2)),
+                TkStar,
+                TkOpenParen,
+                TkNum(Value::from_num(3)),
+                TkPlus,
+                TkNum(Value::from_num(4)),
+                TkCloseParen,
+                TkCloseParen,
+            ],
+            &token_buffer,
+        )
     }
 }

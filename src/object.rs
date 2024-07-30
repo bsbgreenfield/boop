@@ -1,13 +1,14 @@
 #![allow(unused)]
 use core::panic;
 
-enum ObjType {
+#[derive(PartialEq)]
+pub enum ObjType {
     ObjStringType,
     ObjBobjType,
 }
 
 pub trait Object {
-    fn type_of(&self) -> ObjType {
+    fn get_type(&self) -> ObjType {
         match self {
             ObjString => ObjType::ObjStringType,
             ObjBobj => ObjType::ObjBobjType,

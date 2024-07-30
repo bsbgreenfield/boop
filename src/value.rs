@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use crate::object::Object;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ValType {
     ValNumType,
     ValBoolType,
@@ -33,8 +33,44 @@ pub struct Value {
     pub data: ValData,
 }
 
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        if self.val_type != other.val_type {
+            return false;
+        } else {
+            match &self.data {
+                ValData::ValNum(num) => match &other.data {
+                    ValData::ValNum(other_num) => {
+                        return num == other_num;
+                    }
+                    _ => return false,
+                },
+                ValData::ValBool(boolean) => match other.data {
+                    ValData::ValBool(other_boolean) => {
+                        return *boolean == other_boolean;
+                    }
+                    _ => return false,
+                },
+                ValData::ValObj(box_of_object) => match &other.data {
+                    ValData::ValObj(other_box_of_object) => {
+                        return box_of_object.get_type() == other_box_of_object.get_type();
+                    }
+                    _ => return false,
+                },
+            }
+        }
+    }
+}
+
 impl Value {
     pub fn new(val_type: ValType, data: ValData) -> Self {
         Value { val_type, data }
+    }
+
+    pub fn from_num(num: i32) -> Self {
+        Value {
+            val_type: ValType::ValNumType,
+            data: ValData::ValNum(num),
+        }
     }
 }

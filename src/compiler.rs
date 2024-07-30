@@ -8,7 +8,7 @@ use crate::{
     value::{ValData, Value},
 };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Operations {
     OpConstant,
     OpAdd,
@@ -34,9 +34,20 @@ enum Precedence {
     PrecGrouping,
 }
 
+#[derive(PartialEq)]
 enum Instruction {
     Operation(Operations),
     ConstantIdx(u8),
+}
+
+impl Instruction {
+    pub fn from_operation(op: Operations) -> Self {
+        Instruction::Operation(op)
+    }
+
+    pub fn from_constant_idx(idx: u8) -> Self {
+        Instruction::ConstantIdx(idx)
+    }
 }
 
 impl fmt::Debug for Instruction {
@@ -216,5 +227,48 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
+    }
+}
+
+mod tests {
+    use super::*;
+    use Operations::*;
+
+    #[test]
+    fn compile_a_single_number() {
+        let instruction_buffer: Vec<Instruction>;
+        let code: &String = &String::from("123");
+        let mut compiler: Compiler = Compiler::new(code);
+        compiler.expression();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0)
+            ]
+        )
+    }
+
+    #[test]
+    fn compile_an_arithmatic_expression() {
+        let instruction_buffer: Vec<Instruction>;
+        let code: &String = &String::from("1 + (2 * 3)");
+        let mut compiler: Compiler = Compiler::new(code);
+        compiler.expression();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(2),
+                Instruction::from_operation(OpMultiply),
+                Instruction::from_operation(OpAdd),
+            ]
+        )
     }
 }
