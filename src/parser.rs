@@ -1,14 +1,27 @@
 #![allow(unused)]
 use core::panic;
 use std::{
+    cell::LazyCell,
+    collections::HashMap,
     error::Error,
     fmt::Debug,
     iter::Peekable,
     str::{Chars, SplitWhitespace},
+    sync::LazyLock,
 };
 
 use crate::value::{ValData, ValType, Value};
 
+fn generate_keyword_hash() -> HashMap<&'static str, Token> {
+    let mut result = HashMap::new();
+    result.insert("true", Token::TkTrue);
+    result.insert("false", Token::TkFalse);
+    result.insert("for", Token::TkFor);
+
+    result
+}
+
+#[derive(Debug)]
 pub enum Token {
     TkNum(Value),
     TkEquals,
@@ -19,6 +32,9 @@ pub enum Token {
     TkSemicolon,
     TkOpenParen,
     TkCloseParen,
+    TkTrue,
+    TkFalse,
+    TkFor,
     TkEof,
     TkErr,
 }
@@ -38,24 +54,6 @@ impl PartialEq for Token {
             | (Self::TkEof, Self::TkEof)
             | (Self::TkErr, Self::TkErr) => true,
             _ => false,
-        }
-    }
-}
-
-impl Debug for Token {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Token::TkNum(val) => f.debug_struct("TkNum").field("val", &val.data).finish(),
-            Token::TkEquals => write!(f, "TkEquals"),
-            Token::TkPlus => write!(f, "TKPlus"),
-            Token::TkMinus => write!(f, "TkMInus"),
-            Token::TkStar => write!(f, "TkStar"),
-            Token::TkSlash => write!(f, "TkSlash"),
-            Token::TkSemicolon => write!(f, "TkSemicolon"),
-            Token::TkOpenParen => write!(f, "TkOpenParen"),
-            Token::TkCloseParen => write!(f, "TkCloseParen"),
-            Token::TkEof => write!(f, "TkEof"),
-            Token::TkErr => write!(f, "TkErr"),
         }
     }
 }

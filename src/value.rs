@@ -62,6 +62,15 @@ impl PartialEq for Value {
     }
 }
 
+impl Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Value")
+            .field("val_type", &self.val_type)
+            .field("data", &self.data)
+            .finish()
+    }
+}
+
 impl Value {
     pub fn new(val_type: ValType, data: ValData) -> Self {
         Value { val_type, data }
