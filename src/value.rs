@@ -1,4 +1,5 @@
 #![allow(unused)]
+use core::panic;
 use std::fmt::Debug;
 
 use crate::object::Object;
@@ -81,5 +82,18 @@ impl Value {
             val_type: ValType::ValNumType,
             data: ValData::ValNum(num),
         }
+    }
+}
+
+pub fn val_from_slice(val_type: ValType, slice: &str) -> Option<Value> {
+    match val_type {
+        ValType::ValNumType => {
+            let maybe_number = slice.parse::<i32>();
+            match maybe_number {
+                Ok(num) => return Some(Value::from_num(num)),
+                Err(msg) => return None,
+            }
+        }
+        _ => None,
     }
 }

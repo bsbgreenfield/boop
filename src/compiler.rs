@@ -3,6 +3,8 @@ use core::fmt;
 use core::panic;
 use std::{collections::hash_map, mem};
 
+use crate::value;
+use crate::value::ValType;
 use crate::{
     parser::{self, Parser, Token},
     value::{ValData, Value},
@@ -72,22 +74,6 @@ fn prec_of(operation: &Operations) -> Precedence {
         OpGrouping => PrecNone,
         _ => panic!("not yet implemented..."),
     }
-}
-
-fn assert_is_constant(token: Token) -> Value {
-    match token {
-        Token::TkNum(val) => val,
-        _ => panic!("Expected a valid constant, received {:?}", token),
-    }
-}
-
-fn assert_is_operator(token: Token) -> Token {
-    use Token::*;
-    assert!(match token {
-        TkPlus | TkMinus | TkStar | TkSlash => true,
-        _ => false,
-    });
-    return token;
 }
 
 fn token_to_operator(token: &Token) -> Operations {
@@ -185,6 +171,32 @@ impl<'a> Compiler<'a> {
             code: Vec::<Instruction>::new(),
         }
     }
+    fn assert_is_constant(&self, token: Token) -> Value {
+        match token {
+            Token::TkNum => {
+                if let Some(value) =
+                    value::val_from_slice(ValType::ValNumType, self.parser.get_curr_slice())
+                {
+                    return value;
+                } else {
+                    panic!("problem parsing value");
+                }
+            }
+            _ => panic!(
+                "Expected a valid constant, received {:?} as a token instead",
+                token
+            ),
+        }
+    }
+
+    fn assert_is_operator(&self, token: Token) -> Token {
+        use Token::*;
+        assert!(match token {
+            TkPlus | TkMinus | TkStar | TkSlash => true,
+            _ => false,
+        });
+        return token;
+    }
 
     pub fn expression(&mut self) -> () {
         let mut operator_stack: Vec<Operations> = Vec::with_capacity(8);
@@ -202,11 +214,11 @@ impl<'a> Compiler<'a> {
                         continue;
                     }
                     if operand_phase {
-                        let val = assert_is_constant(token);
+                        let val = Self::assert_is_constant(self, token);
                         emit_constant(Operations::OpConstant, val, self);
                         operand_phase = false;
                     } else {
-                        let operator_token: Token = assert_is_operator(token);
+                        let operator_token: Token = Self::assert_is_operator(self, token);
                         let operator = token_to_operator(&operator_token);
                         let top_of_operator_stack: &Operations = top_of(&operator_stack);
                         // if the new operator is of a higher precedence than the last, push it onto the
@@ -247,7 +259,9 @@ mod tests {
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0)
             ]
-        )
+        );
+
+        assert_eq!(&compiler.constants, &vec![Value::from_num(123)]);
     }
 
     #[test]
@@ -269,6 +283,11 @@ mod tests {
                 Instruction::from_operation(OpMultiply),
                 Instruction::from_operation(OpAdd),
             ]
-        )
+        );
+
+        assert_eq!(
+            &compiler.constants,
+            &vec![Value::from_num(1), Value::from_num(2), Value::from_num(3)]
+        );
     }
 }

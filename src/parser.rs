@@ -21,9 +21,9 @@ fn generate_keyword_hash() -> HashMap<&'static str, Token> {
     result
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Token {
-    TkNum(Value),
+    TkNum,
     TkEquals,
     TkPlus,
     TkMinus,
@@ -37,25 +37,6 @@ pub enum Token {
     TkFor,
     TkEof,
     TkErr,
-}
-
-impl PartialEq for Token {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::TkNum(val), Self::TkNum(other_val)) => val == other_val,
-            (Self::TkEquals, Self::TkEquals)
-            | (Self::TkPlus, Self::TkPlus)
-            | (Self::TkMinus, Self::TkMinus)
-            | (Self::TkStar, Self::TkStar)
-            | (Self::TkSlash, Self::TkSlash)
-            | (Self::TkSemicolon, Self::TkSemicolon)
-            | (Self::TkOpenParen, Self::TkOpenParen)
-            | (Self::TkCloseParen, Self::TkCloseParen)
-            | (Self::TkEof, Self::TkEof)
-            | (Self::TkErr, Self::TkErr) => true,
-            _ => false,
-        }
-    }
 }
 
 pub struct Parser<'a> {
@@ -146,7 +127,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn get_curr_slice(&self) -> &str {
+    pub fn get_curr_slice(&self) -> &str {
         &self.code_text[self.start..self.end]
     }
 
@@ -184,7 +165,7 @@ impl<'a> Parser<'a> {
         if let Some(char) = maybe_next_char {
             if let Some(number) = Self::try_parse_num(self, char) {
                 println!("Current slice is {}..{}", self.start, self.end);
-                return Some(TkNum(Value::from_num(number)));
+                return Some(TkNum);
             } else {
                 let token = match char {
                     '+' => TkPlus,
@@ -226,7 +207,7 @@ mod tests {
         let mut token_buffer: Vec<Token> = Vec::new();
         let mut parser = Parser::new("1");
         parse_everything(&mut parser, &mut token_buffer);
-        assert_eq!(&vec![Token::TkNum(Value::from_num(1))], &token_buffer);
+        assert_eq!(&vec![Token::TkNum], &token_buffer);
     }
 
     #[test]
@@ -235,7 +216,7 @@ mod tests {
         let mut parser = Parser::new("12345");
         parse_everything(&mut parser, &mut token_buffer);
 
-        assert_eq!(&vec![Token::TkNum(Value::from_num(12345))], &token_buffer);
+        assert_eq!(&vec![Token::TkNum], &token_buffer);
     }
 
     #[test]
@@ -245,11 +226,7 @@ mod tests {
         parse_everything(&mut parser, &mut token_buffer);
 
         assert_eq!(
-            &vec![
-                Token::TkOpenParen,
-                Token::TkNum(Value::from_num(123)),
-                Token::TkCloseParen
-            ],
+            &vec![Token::TkOpenParen, Token::TkNum, Token::TkCloseParen],
             &token_buffer
         );
     }
@@ -262,17 +239,17 @@ mod tests {
         use Token::*;
         assert_eq!(
             &vec![
-                TkNum(Value::from_num(0)),
+                TkNum,
                 TkStar,
                 TkOpenParen,
-                TkNum(Value::from_num(1)),
+                TkNum,
                 TkStar,
-                TkNum(Value::from_num(2)),
+                TkNum,
                 TkStar,
                 TkOpenParen,
-                TkNum(Value::from_num(3)),
+                TkNum,
                 TkPlus,
-                TkNum(Value::from_num(4)),
+                TkNum,
                 TkCloseParen,
                 TkCloseParen,
             ],
