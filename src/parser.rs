@@ -58,90 +58,11 @@ impl PartialEq for Token {
     }
 }
 
-fn get_num_from_chars(first_char: char, char_iter: &mut Peekable<Chars>) -> Option<i32> {
-    let mut result_string = String::from(first_char);
-    while let Some(next_char) = char_iter.peek() {
-        // if the next char is numeric, add it to the number
-        // otherwise, break and evaluate the number
-        match next_char {
-            '0'..='9' => result_string.push(char_iter.next().unwrap()),
-            _ => break,
-        }
-    }
-    match result_string.parse::<i32>() {
-        Ok(number) => return Some(number),
-        Err(_) => return None,
-    }
-}
-
-fn try_parse_num(char: char, char_iter: &mut Peekable<Chars>) -> Option<i32> {
-    match char {
-        '0' => {
-            if let Some(next_char) = char_iter.peek() {
-                match next_char {
-                    ' ' => Some(0),
-                    '0'..='9' => panic!("remove the leading 0 in the number"),
-                    _ => panic!("unexpected token {}", next_char),
-                }
-            } else {
-                None
-            }
-        }
-        '1'..='9' => {
-            return get_num_from_chars(char, char_iter);
-        }
-        '-' => {
-            if let Some(number) = get_num_from_chars(char, char_iter) {
-                let result: i32 = number * -1;
-                return Some(number * -1);
-            } else {
-                return None;
-            }
-        }
-        _ => None,
-    }
-}
-
-fn match_keyword(ending: &str, char_iter: &mut Peekable<Chars>) -> Option<Token> {
-    for i in 1..(ending.len()) {
-        if char_iter.next() != ending.chars().nth(i) {
-            return None;
-        }
-    }
-    None
-}
-
-fn try_parse_keyword(char: char, char_iter: &mut Peekable<Chars>) -> Option<Token> {
-    match char {
-        't' => {
-            return match_keyword("true", char_iter);
-        }
-        'f' => match char_iter.peek() {
-            Some(next_char) => match next_char {
-                'a' => return match_keyword("false", char_iter),
-                'o' => return match_keyword("for", char_iter),
-                _ => return None,
-            },
-            None => None,
-        },
-        _ => None,
-    }
-}
-
-fn skip_whitespace(iter: &mut Peekable<Chars>) -> Option<char> {
-    while let Some(char) = iter.next() {
-        if char == ' ' {
-            continue;
-        } else {
-            return Some(char);
-        }
-    }
-    return None;
-}
-
 pub struct Parser<'a> {
     code_text: &'a str,
     code_iter: Peekable<Chars<'a>>,
+    start: usize,
+    end: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -149,16 +70,120 @@ impl<'a> Parser<'a> {
         Parser {
             code_text: input,
             code_iter: input.chars().peekable(),
+            start: 0,
+            end: 0,
         }
     }
+
+    fn get_num_from_chars(&mut self, first_char: char) -> Option<i32> {
+        let mut result_string = String::from(first_char);
+        while let Some(next_char) = self.code_iter.peek() {
+            // if the next char is numeric, add it to the number
+            // otherwise, break and evaluate the number
+            match next_char {
+                '0'..='9' => result_string.push(Self::next_char(self).unwrap()), // we can safely
+                // unwrap here because we already peeked!
+                _ => break,
+            }
+        }
+        match result_string.parse::<i32>() {
+            Ok(number) => return Some(number),
+            Err(_) => return None,
+        }
+    }
+
+    fn try_parse_num(&mut self, char: char) -> Option<i32> {
+        match char {
+            '0' => {
+                if let Some(next_char) = self.code_iter.peek() {
+                    match next_char {
+                        ' ' => Some(0),
+                        '0'..='9' => panic!("remove the leading 0 in the number"),
+                        _ => panic!("unexpected token {}", next_char),
+                    }
+                } else {
+                    None
+                }
+            }
+            '1'..='9' => {
+                return Self::get_num_from_chars(self, char);
+            }
+            '-' => {
+                if let Some(number) = Self::get_num_from_chars(self, char) {
+                    let result: i32 = number * -1;
+                    return Some(number * -1);
+                } else {
+                    return None;
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn match_keyword(&mut self, ending: &str) -> Option<Token> {
+        for i in 1..(ending.len()) {
+            if Self::next_char(self) != ending.chars().nth(i) {
+                return None;
+            }
+        }
+        None
+    }
+
+    fn try_parse_keyword(&mut self, char: char) -> Option<Token> {
+        match char {
+            't' => {
+                return Self::match_keyword(self, "true");
+            }
+            'f' => match self.code_iter.peek() {
+                Some(next_char) => match next_char {
+                    'a' => return Self::match_keyword(self, "false"),
+                    'o' => return Self::match_keyword(self, "for"),
+                    _ => return None,
+                },
+                None => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn get_curr_slice(&self) -> &str {
+        &self.code_text[self.start..self.end]
+    }
+
+    fn next_char(&mut self) -> Option<char> {
+        // return next and also increment the end index
+        if let Some(char) = self.code_iter.next() {
+            self.end += 1;
+            Some(char)
+        } else {
+            None
+        }
+    }
+
+    fn skip_whitespace(&mut self) -> Option<char> {
+        while let Some(char) = self.code_iter.next() {
+            if char == ' ' {
+                // while searching for the next item, increment end and start
+                self.start += 1;
+                continue;
+            } else {
+                self.end = self.start + 1;
+                return Some(char);
+            }
+        }
+        return None;
+    }
+
     pub fn parse_next(&mut self) -> Option<Token> {
         use Token::*;
+
+        self.start = self.end;
         // call code_iter.next() until either we get a character or we get None
-        let maybe_next_char: Option<char> = skip_whitespace(&mut self.code_iter);
+        let maybe_next_char: Option<char> = Self::skip_whitespace(self);
         // if we get a character, check if its a number, then check if its something else
         if let Some(char) = maybe_next_char {
-            if let Some(number) = try_parse_num(char, &mut self.code_iter) {
-                println!("Token: {}", number);
+            if let Some(number) = Self::try_parse_num(self, char) {
+                println!("Current slice is {}..{}", self.start, self.end);
                 return Some(TkNum(Value::from_num(number)));
             } else {
                 let token = match char {
@@ -175,7 +200,7 @@ impl<'a> Parser<'a> {
                         TkErr
                     }
                 };
-                println!("Token: {:?}", token);
+                println!("Current slice is {}..{}", self.start, self.end);
                 return Some(token);
             }
         }
