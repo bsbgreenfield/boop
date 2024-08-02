@@ -21,7 +21,9 @@ fn generate_keyword_hash() -> HashMap<&'static str, Token> {
     result
 }
 
-#[derive(Debug, PartialEq)]
+static KEYWORD_HASH: LazyLock<HashMap<&str, Token>> = LazyLock::new(|| generate_keyword_hash());
+
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Token {
     TkNum,
     TkEquals,
@@ -101,24 +103,24 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn match_keyword(&mut self, ending: &str) -> Option<Token> {
-        for i in 1..(ending.len()) {
-            if Self::next_char(self) != ending.chars().nth(i) {
+    fn match_keyword(&mut self, keyword: &str, offset: usize) -> Option<Token> {
+        for i in offset..(keyword.len()) {
+            if Self::next_char(self) != keyword.chars().nth(i) {
                 return None;
             }
         }
-        None
+        return KEYWORD_HASH.get(keyword).copied();
     }
 
     fn try_parse_keyword(&mut self, char: char) -> Option<Token> {
         match char {
             't' => {
-                return Self::match_keyword(self, "true");
+                return Self::match_keyword(self, "true", 1);
             }
-            'f' => match self.code_iter.peek() {
+            'f' => match self.next_char() {
                 Some(next_char) => match next_char {
-                    'a' => return Self::match_keyword(self, "false"),
-                    'o' => return Self::match_keyword(self, "for"),
+                    'a' => return Self::match_keyword(self, "false", 2),
+                    'o' => return Self::match_keyword(self, "for", 2),
                     _ => return None,
                 },
                 None => None,
@@ -166,6 +168,8 @@ impl<'a> Parser<'a> {
             if let Some(number) = Self::try_parse_num(self, char) {
                 println!("Current slice is {}..{}", self.start, self.end);
                 return Some(TkNum);
+            } else if let Some(token) = Self::try_parse_keyword(self, char) {
+                return Some(token);
             } else {
                 let token = match char {
                     '+' => TkPlus,
@@ -255,5 +259,14 @@ mod tests {
             ],
             &token_buffer,
         )
+    }
+
+    #[test]
+    fn parse_bool() {
+        let mut token_buffer: Vec<Token> = Vec::new();
+        let mut parser = Parser::new("true false 123");
+        parse_everything(&mut parser, &mut token_buffer);
+        use Token::*;
+        assert_eq!(&vec![TkTrue, TkFalse, TkNum], &token_buffer,);
     }
 }

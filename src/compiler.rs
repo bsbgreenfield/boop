@@ -95,12 +95,24 @@ fn make_constant(val: Value, compiler: &mut Compiler) -> Result<u8, &'static str
     return Ok(idx.try_into().unwrap());
 }
 
-fn emit_constant(operation: Operations, val: Value, compiler: &mut Compiler) {
-    if let Ok(idx) = make_constant(val, compiler) {
-        compiler.code.push(Instruction::Operation(operation));
-        compiler.code.push(Instruction::ConstantIdx(idx));
-    } else {
-        panic!("error in alocating constant");
+fn emit_constant(val: Value, compiler: &mut Compiler) {
+    match val.val_type {
+        ValType::ValNumType => {
+            if let Ok(idx) = make_constant(val, compiler) {
+                compiler
+                    .code
+                    .push(Instruction::Operation(Operations::OpConstant));
+                compiler.code.push(Instruction::ConstantIdx(idx));
+            } else {
+                panic!("error in alocating constant");
+            }
+        }
+        ValType::ValBoolType => {
+            compiler.constants.push(val);
+            compiler
+                .code
+                .push(Instruction::Operation(Operations::OpConstant));
+        }
     }
 }
 
@@ -182,6 +194,12 @@ impl<'a> Compiler<'a> {
                     panic!("problem parsing value");
                 }
             }
+            Token::TkTrue => {
+                return Value::from_bool(true);
+            }
+            Token::TkFalse => {
+                return Value::from_bool(false);
+            }
             _ => panic!(
                 "Expected a valid constant, received {:?} as a token instead",
                 token
@@ -215,7 +233,7 @@ impl<'a> Compiler<'a> {
                     }
                     if operand_phase {
                         let val = Self::assert_is_constant(self, token);
-                        emit_constant(Operations::OpConstant, val, self);
+                        emit_constant(val, self);
                         operand_phase = false;
                     } else {
                         let operator_token: Token = Self::assert_is_operator(self, token);
@@ -289,5 +307,18 @@ mod tests {
             &compiler.constants,
             &vec![Value::from_num(1), Value::from_num(2), Value::from_num(3)]
         );
+    }
+    #[test]
+    fn compile_a_boolean() {
+        let instruction_buffer: Vec<Instruction>;
+        let code: &String = &String::from("true");
+        let mut compiler: Compiler = Compiler::new(code);
+        compiler.expression();
+        assert_eq!(
+            &compiler.code,
+            &vec![Instruction::from_operation(OpConstant)],
+        );
+
+        assert_eq!(&compiler.constants, &vec![Value::from_bool(true)])
     }
 }

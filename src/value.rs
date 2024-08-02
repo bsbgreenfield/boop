@@ -30,7 +30,7 @@ impl Debug for ValData {
 }
 
 pub struct Value {
-    val_type: ValType,
+    pub val_type: ValType,
     pub data: ValData,
 }
 
@@ -81,6 +81,13 @@ impl Value {
         Value {
             val_type: ValType::ValNumType,
             data: ValData::ValNum(num),
+        }
+    }
+
+    pub fn from_bool(boolean: bool) -> Self {
+        Value {
+            val_type: ValType::ValBoolType,
+            data: ValData::ValBool(boolean),
         }
     }
 }
