@@ -17,6 +17,8 @@ enum Operations {
     OpSubtract,
     OpMultiply,
     OpDivide,
+    OpAnd,
+    OpOr,
     NoOp,
     OpGrouping,
 }
@@ -70,9 +72,10 @@ fn prec_of(operation: &Operations) -> Precedence {
         OpMultiply => PrecFactor,
         OpDivide => PrecFactor,
         OpConstant => PrecPrimary,
+        OpAnd => PrecAnd,
+        OpOr => PrecOr,
         NoOp => PrecNone,
         OpGrouping => PrecNone,
-        _ => panic!("not yet implemented..."),
     }
 }
 
@@ -85,7 +88,12 @@ fn token_to_operator(token: &Token) -> Operations {
         TkStar => OpMultiply,
         TkSlash => OpDivide,
         TkOpenParen => OpGrouping,
-        _ => panic!("not a valid operator token"),
+        TkAnd => OpAnd,
+        TkOr => OpOr,
+        TkFalse | TkTrue | TkEof | TkErr | TkFor | TkSemicolon | TkNum | TkEquals
+        | TkCloseParen => {
+            panic!("Expected an operator token, got {:?}", token);
+        }
     };
 }
 
@@ -97,7 +105,7 @@ fn make_constant(val: Value, compiler: &mut Compiler) -> Result<u8, &'static str
 
 fn emit_constant(val: Value, compiler: &mut Compiler) {
     match val.val_type {
-        ValType::ValNumType => {
+        ValType::ValNumType | ValType::ValBoolType => {
             if let Ok(idx) = make_constant(val, compiler) {
                 compiler
                     .code
@@ -106,12 +114,6 @@ fn emit_constant(val: Value, compiler: &mut Compiler) {
             } else {
                 panic!("error in alocating constant");
             }
-        }
-        ValType::ValBoolType => {
-            compiler.constants.push(val);
-            compiler
-                .code
-                .push(Instruction::Operation(Operations::OpConstant));
         }
     }
 }
@@ -143,7 +145,49 @@ fn is_group_end(token: &Token) -> bool {
     }
 }
 
-fn dump_stack(stack: &mut Vec<Operations>, compiler: &mut Compiler) -> () {
+fn can_add_or_subtract(
+    operand_1: ValType,
+    operand_2: ValType,
+    operand_type_stack: &mut Vec<ValType>,
+) -> bool {
+    if operand_1 == ValType::ValNumType && operand_2 == ValType::ValNumType {
+        push_type(ValType::ValNumType, operand_type_stack);
+        return true;
+    } // TODO: else if valstring and valstring return true, and OpConcat
+    return false;
+}
+
+fn can_multiply_or_divide(
+    operand_1: ValType,
+    operand_2: ValType,
+    operand_type_stack: &mut Vec<ValType>,
+) -> bool {
+    if operand_1 == ValType::ValNumType && operand_2 == ValType::ValNumType {
+        push_type(ValType::ValNumType, operand_type_stack);
+        return true;
+    }
+    return false;
+}
+
+fn can_and_or_or(
+    operand_1: ValType,
+    operand_2: ValType,
+    operand_type_stack: &mut Vec<ValType>,
+) -> bool {
+    if operand_1 == ValType::ValBoolType && operand_2 == ValType::ValBoolType {
+        push_type(ValType::ValBoolType, operand_type_stack);
+        return true;
+    }
+    return false;
+}
+
+fn dump_stack(
+    stack: &mut Vec<Operations>,
+    operand_type_stack: &mut Vec<ValType>,
+    compiler: &mut Compiler,
+) -> () {
+    println!("type_stack: {:?}", operand_type_stack);
+    println!("operator stack: {:?}", stack);
     // dump until we hit a grouing operation, then pop that and exit
     while stack.len() > 0 {
         if let Some(operation) = stack.pop() {
@@ -151,7 +195,41 @@ fn dump_stack(stack: &mut Vec<Operations>, compiler: &mut Compiler) -> () {
                 Operations::OpGrouping => {
                     break;
                 }
-                _ => emit_operation(operation, compiler),
+                _ => {
+                    let operand_1 = operand_type_stack.pop().unwrap();
+                    let operand_2 = operand_type_stack.pop().unwrap();
+                    match operation {
+                        Operations::OpAdd | Operations::OpSubtract => {
+                            if can_add_or_subtract(operand_1, operand_2, operand_type_stack) {
+                                emit_operation(operation, compiler);
+                            } else {
+                                panic!(
+                                    "Type mismatch: can't add or subtract {:?} to {:?}",
+                                    operand_1, operand_2
+                                );
+                            }
+                        }
+                        Operations::OpMultiply | Operations::OpDivide => {
+                            if can_multiply_or_divide(operand_1, operand_2, operand_type_stack) {
+                                emit_operation(operation, compiler);
+                            } else {
+                                panic!(
+                                    "Type mismatch: cant multipply or divide {:?}, with {:?}",
+                                    operand_1, operand_2
+                                );
+                            }
+                        }
+                        Operations::OpAnd | Operations::OpOr => {
+                            if can_and_or_or(operand_1, operand_2, operand_type_stack) {
+                                emit_operation(operation, compiler);
+                            } else {
+                                panic!("Type mismatch: can only use 'and' and 'or' operators with booleans, found {:?}, and {:?}", operand_1, operand_2);
+                            }
+                        }
+
+                        _ => (),
+                    }
+                }
             }
         }
     }
@@ -167,6 +245,14 @@ fn debug_print_expression(compiler: &Compiler) {
             Instruction::ConstantIdx(idx) => println!("{:?}", idx),
         };
     }
+}
+
+fn push_type_of_val(val: &Value, operand_type_stack: &mut Vec<ValType>) {
+    operand_type_stack.push(val.val_type);
+}
+
+fn push_type(val_type: ValType, operand_type_stack: &mut Vec<ValType>) {
+    operand_type_stack.push(val_type);
 }
 
 pub struct Compiler<'a> {
@@ -210,14 +296,15 @@ impl<'a> Compiler<'a> {
     fn assert_is_operator(&self, token: Token) -> Token {
         use Token::*;
         assert!(match token {
-            TkPlus | TkMinus | TkStar | TkSlash => true,
+            TkPlus | TkMinus | TkStar | TkSlash | TkAnd | TkOr => true,
             _ => false,
         });
         return token;
     }
 
     pub fn expression(&mut self) -> () {
-        let mut operator_stack: Vec<Operations> = Vec::with_capacity(8);
+        let mut operator_stack: Vec<Operations> = Vec::new();
+        let mut operand_type_stack: Vec<ValType> = Vec::new();
         let mut operand_phase: bool = true;
         loop {
             let maybe_token = self.parser.parse_next();
@@ -228,30 +315,33 @@ impl<'a> Compiler<'a> {
                         operator_stack.push(token_to_operator(&token));
                         continue;
                     } else if is_group_end(&token) {
-                        dump_stack(&mut operator_stack, self);
+                        dump_stack(&mut operator_stack, &mut operand_type_stack, self);
                         continue;
                     }
+                    // compile constant
                     if operand_phase {
                         let val = Self::assert_is_constant(self, token);
+                        push_type_of_val(&val, &mut operand_type_stack);
                         emit_constant(val, self);
                         operand_phase = false;
-                    } else {
-                        let operator_token: Token = Self::assert_is_operator(self, token);
-                        let operator = token_to_operator(&operator_token);
+                    }
+                    // compile operator
+                    else {
+                        let operator = token_to_operator(&Self::assert_is_operator(self, token));
                         let top_of_operator_stack: &Operations = top_of(&operator_stack);
                         // if the new operator is of a higher precedence than the last, push it onto the
                         // stack
                         if prec_of(&operator) > prec_of(top_of_operator_stack) {
                             operator_stack.push(operator);
                         } else {
-                            dump_stack(&mut operator_stack, self);
+                            dump_stack(&mut operator_stack, &mut operand_type_stack, self);
                             operator_stack.push(operator);
                         }
                         operand_phase = true;
                     }
                 }
                 None => {
-                    dump_stack(&mut operator_stack, self);
+                    dump_stack(&mut operator_stack, &mut operand_type_stack, self);
                     debug_print_expression(&self);
                     break;
                 }
@@ -316,9 +406,64 @@ mod tests {
         compiler.expression();
         assert_eq!(
             &compiler.code,
-            &vec![Instruction::from_operation(OpConstant)],
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0)
+            ],
         );
 
         assert_eq!(&compiler.constants, &vec![Value::from_bool(true)])
+    }
+
+    #[test]
+    fn compile_a_boolean_operation() {
+        let instruction_buffer: Vec<Instruction>;
+        let code: &String = &String::from("true and (false or false) and true");
+        let mut compiler: Compiler = Compiler::new(code);
+        compiler.expression();
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(2),
+                Instruction::from_operation(OpOr),
+                Instruction::from_operation(OpAnd),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(3),
+                Instruction::from_operation(OpAnd),
+            ],
+        );
+
+        assert_eq!(
+            &compiler.constants,
+            &vec![
+                Value::from_bool(true),
+                Value::from_bool(false),
+                Value::from_bool(false),
+                Value::from_bool(true)
+            ]
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn panic_adding_num_and_bool() {
+        let instruction_buffer: Vec<Instruction>;
+        let code: &String = &String::from("1 + (true and true)");
+        let mut compiler: Compiler = Compiler::new(code);
+        compiler.expression();
+    }
+
+    #[test]
+    #[should_panic]
+    fn panic_multiplying_num_and_bool() {
+        let instruction_buffer: Vec<Instruction>;
+        let code: &String = &String::from("1 * false + 2");
+        let mut compiler: Compiler = Compiler::new(code);
+        compiler.expression();
     }
 }

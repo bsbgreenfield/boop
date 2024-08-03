@@ -17,6 +17,8 @@ fn generate_keyword_hash() -> HashMap<&'static str, Token> {
     result.insert("true", Token::TkTrue);
     result.insert("false", Token::TkFalse);
     result.insert("for", Token::TkFor);
+    result.insert("and", Token::TkAnd);
+    result.insert("or", Token::TkOr);
 
     result
 }
@@ -37,6 +39,8 @@ pub enum Token {
     TkTrue,
     TkFalse,
     TkFor,
+    TkAnd,
+    TkOr,
     TkEof,
     TkErr,
 }
@@ -125,6 +129,8 @@ impl<'a> Parser<'a> {
                 },
                 None => None,
             },
+            'a' => return Self::match_keyword(self, "and", 1),
+            'o' => return Self::match_keyword(self, "or", 1),
             _ => None,
         }
     }
@@ -196,7 +202,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use Token::*;
     fn parse_everything(parser: &mut Parser, token_buffer: &mut Vec<Token>) {
         loop {
             match parser.parse_next() {
@@ -240,7 +246,6 @@ mod tests {
         let mut token_buffer: Vec<Token> = Vec::new();
         let mut parser = Parser::new("0 * (1 * 2 * (3 + 4))");
         parse_everything(&mut parser, &mut token_buffer);
-        use Token::*;
         assert_eq!(
             &vec![
                 TkNum,
@@ -266,7 +271,14 @@ mod tests {
         let mut token_buffer: Vec<Token> = Vec::new();
         let mut parser = Parser::new("true false 123");
         parse_everything(&mut parser, &mut token_buffer);
-        use Token::*;
         assert_eq!(&vec![TkTrue, TkFalse, TkNum], &token_buffer,);
+    }
+
+    #[test]
+    fn parse_boolean_operation() {
+        let mut token_buffer: Vec<Token> = Vec::new();
+        let mut parser = Parser::new("true and false or false");
+        parse_everything(&mut parser, &mut token_buffer);
+        assert_eq!(&vec![TkTrue, TkAnd, TkFalse, TkOr, TkFalse,], &token_buffer,);
     }
 }

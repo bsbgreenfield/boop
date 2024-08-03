@@ -4,7 +4,7 @@ use std::fmt::Debug;
 
 use crate::object::Object;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ValType {
     ValNumType,
     ValBoolType,
