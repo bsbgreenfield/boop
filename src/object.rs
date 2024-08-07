@@ -18,7 +18,7 @@ pub trait Object {
     fn get_string(&self) -> &str;
 }
 
-struct ObjString {
+pub struct ObjString {
     charData: String,
 }
 

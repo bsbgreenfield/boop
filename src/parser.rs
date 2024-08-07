@@ -172,7 +172,6 @@ impl<'a> Parser<'a> {
         // if we get a character, check if its a number, then check if its something else
         if let Some(char) = maybe_next_char {
             if let Some(number) = Self::try_parse_num(self, char) {
-                println!("Current slice is {}..{}", self.start, self.end);
                 return Some(TkNum);
             } else if let Some(token) = Self::try_parse_keyword(self, char) {
                 return Some(token);
@@ -191,7 +190,6 @@ impl<'a> Parser<'a> {
                         TkErr
                     }
                 };
-                println!("Current slice is {}..{}", self.start, self.end);
                 return Some(token);
             }
         }

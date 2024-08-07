@@ -11,7 +11,7 @@ use crate::{
 };
 
 #[derive(Debug, PartialEq)]
-enum Operations {
+pub enum Operations {
     OpConstant,
     OpAdd,
     OpSubtract,
@@ -39,7 +39,7 @@ enum Precedence {
 }
 
 #[derive(PartialEq)]
-enum Instruction {
+pub enum Instruction {
     Operation(Operations),
     ConstantIdx(u8),
 }
@@ -186,8 +186,6 @@ fn dump_stack(
     operand_type_stack: &mut Vec<ValType>,
     compiler: &mut Compiler,
 ) -> () {
-    println!("type_stack: {:?}", operand_type_stack);
-    println!("operator stack: {:?}", stack);
     // dump until we hit a grouing operation, then pop that and exit
     while stack.len() > 0 {
         if let Some(operation) = stack.pop() {
@@ -257,8 +255,8 @@ fn push_type(val_type: ValType, operand_type_stack: &mut Vec<ValType>) {
 
 pub struct Compiler<'a> {
     parser: Parser<'a>,
-    constants: Vec<Value>,
-    code: Vec<Instruction>,
+    pub constants: Vec<Value>,
+    pub code: Vec<Instruction>,
 }
 
 impl<'a> Compiler<'a> {

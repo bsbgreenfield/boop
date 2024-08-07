@@ -1,8 +1,8 @@
 #![allow(unused)]
 use core::panic;
-use std::fmt::Debug;
+use std::{fmt::Debug, rc::Rc};
 
-use crate::object::Object;
+use crate::object::{ObjString, Object};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ValType {
@@ -13,8 +13,38 @@ pub enum ValType {
 pub enum ValData {
     ValNum(i32),
     ValBool(bool),
-    ValObj(Box<dyn Object>), // this will almost certainly have to be an RC to account for
-                             // interning strings
+    ValObj(Rc<dyn Object>), // this will almost certainly have to be an RC to account for
+                            // interning strings
+}
+
+impl ValData {
+    #[inline]
+    pub fn unwrap_int(&self) -> i32 {
+        if let ValData::ValNum(num) = self {
+            *num
+        } else {
+            panic!("this is not a num type");
+        }
+    }
+
+    #[inline]
+    pub fn unwrap_bool(&self) -> bool {
+        if let ValData::ValBool(boolean) = self {
+            *boolean
+        } else {
+            panic!("This is not a bool type");
+        }
+    }
+}
+
+impl Clone for ValData {
+    fn clone(&self) -> Self {
+        match self {
+            ValData::ValNum(num) => ValData::ValNum(*num),
+            ValData::ValBool(boolean) => ValData::ValBool(*boolean),
+            ValData::ValObj(obj) => ValData::ValObj(Rc::clone(obj)),
+        }
+    }
 }
 
 impl Debug for ValData {
