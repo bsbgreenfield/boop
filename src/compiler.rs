@@ -1,8 +1,9 @@
-#![allow(unused)]
 use core::fmt;
 use core::panic;
+use std::rc::Rc;
 use std::{collections::hash_map, mem};
 
+use crate::object::ObjString;
 use crate::value;
 use crate::value::ValType;
 use crate::{
@@ -14,6 +15,7 @@ use crate::{
 pub enum Operations {
     OpConstant,
     OpAdd,
+    OpConcat,
     OpSubtract,
     OpMultiply,
     OpDivide,
@@ -68,6 +70,7 @@ fn prec_of(operation: &Operations) -> Precedence {
     use Precedence::*;
     match operation {
         OpAdd => PrecTerm,
+        OpConcat => PrecTerm,
         OpSubtract => PrecTerm,
         OpMultiply => PrecFactor,
         OpDivide => PrecFactor,
@@ -79,24 +82,6 @@ fn prec_of(operation: &Operations) -> Precedence {
     }
 }
 
-fn token_to_operator(token: &Token) -> Operations {
-    use Operations::*;
-    use Token::*;
-    return match token {
-        TkPlus => OpAdd,
-        TkMinus => OpSubtract,
-        TkStar => OpMultiply,
-        TkSlash => OpDivide,
-        TkOpenParen => OpGrouping,
-        TkAnd => OpAnd,
-        TkOr => OpOr,
-        TkFalse | TkTrue | TkEof | TkErr | TkFor | TkSemicolon | TkNum | TkEquals
-        | TkCloseParen => {
-            panic!("Expected an operator token, got {:?}", token);
-        }
-    };
-}
-
 fn make_constant(val: Value, compiler: &mut Compiler) -> Result<u8, &'static str> {
     let idx = compiler.constants.len();
     compiler.constants.push(val);
@@ -104,17 +89,13 @@ fn make_constant(val: Value, compiler: &mut Compiler) -> Result<u8, &'static str
 }
 
 fn emit_constant(val: Value, compiler: &mut Compiler) {
-    match val.val_type {
-        ValType::ValNumType | ValType::ValBoolType => {
-            if let Ok(idx) = make_constant(val, compiler) {
-                compiler
-                    .code
-                    .push(Instruction::Operation(Operations::OpConstant));
-                compiler.code.push(Instruction::ConstantIdx(idx));
-            } else {
-                panic!("error in alocating constant");
-            }
-        }
+    if let Ok(idx) = make_constant(val, compiler) {
+        compiler
+            .code
+            .push(Instruction::Operation(Operations::OpConstant));
+        compiler.code.push(Instruction::ConstantIdx(idx));
+    } else {
+        panic!("error in alocating constant");
     }
 }
 
@@ -122,12 +103,12 @@ fn emit_operation(operation: Operations, compiler: &mut Compiler) {
     compiler.code.push(Instruction::Operation(operation));
 }
 
-fn top_of(stack: &Vec<Operations>) -> &Operations {
+fn top_of<T>(stack: &Vec<T>) -> Option<&T> {
     let length = stack.len();
     if length == 0 {
-        &Operations::NoOp
+        None
     } else {
-        &stack[length - 1]
+        Some(&stack[length - 1])
     }
 }
 
@@ -153,7 +134,10 @@ fn can_add_or_subtract(
     if operand_1 == ValType::ValNumType && operand_2 == ValType::ValNumType {
         push_type(ValType::ValNumType, operand_type_stack);
         return true;
-    } // TODO: else if valstring and valstring return true, and OpConcat
+    } else if operand_1 == ValType::ValStringType && operand_2 == ValType::ValStringType {
+        push_type(ValType::ValStringType, operand_type_stack);
+        return true;
+    }
     return false;
 }
 
@@ -197,7 +181,7 @@ fn dump_stack(
                     let operand_1 = operand_type_stack.pop().unwrap();
                     let operand_2 = operand_type_stack.pop().unwrap();
                     match operation {
-                        Operations::OpAdd | Operations::OpSubtract => {
+                        Operations::OpAdd | Operations::OpConcat | Operations::OpSubtract => {
                             if can_add_or_subtract(operand_1, operand_2, operand_type_stack) {
                                 emit_operation(operation, compiler);
                             } else {
@@ -224,8 +208,7 @@ fn dump_stack(
                                 panic!("Type mismatch: can only use 'and' and 'or' operators with booleans, found {:?}, and {:?}", operand_1, operand_2);
                             }
                         }
-
-                        _ => (),
+                        Operations::OpConstant | Operations::NoOp | Operations::OpGrouping => (),
                     }
                 }
             }
@@ -253,6 +236,32 @@ fn push_type(val_type: ValType, operand_type_stack: &mut Vec<ValType>) {
     operand_type_stack.push(val_type);
 }
 
+fn token_to_operator(token: &Token, operand_type: &ValType) -> Operations {
+    use Operations::*;
+    use Token::*;
+    return match token {
+        TkPlus => {
+            if operand_type == &ValType::ValStringType {
+                OpConcat
+            } else if operand_type == &ValType::ValNumType {
+                OpAdd
+            } else {
+                panic!("You may only add two numbers or two strings");
+            }
+        }
+        TkMinus => OpSubtract,
+        TkStar => OpMultiply,
+        TkSlash => OpDivide,
+        TkOpenParen => OpGrouping,
+        TkAnd => OpAnd,
+        TkOr => OpOr,
+        TkFalse | TkTrue | TkEof | TkErr | TkFor | TkSemicolon | TkNum | TkEquals
+        | TkCloseParen | TkString => {
+            panic!("Expected an operator token, got {:?}", token);
+        }
+    };
+}
+
 pub struct Compiler<'a> {
     parser: Parser<'a>,
     pub constants: Vec<Value>,
@@ -267,6 +276,7 @@ impl<'a> Compiler<'a> {
             code: Vec::<Instruction>::new(),
         }
     }
+
     fn assert_is_constant(&self, token: Token) -> Value {
         match token {
             Token::TkNum => {
@@ -283,6 +293,13 @@ impl<'a> Compiler<'a> {
             }
             Token::TkFalse => {
                 return Value::from_bool(false);
+            }
+            Token::TkString => {
+                let str_slice = self.parser.get_curr_slice(); // lexeme from code file
+                let trimmed = &str_slice[1..str_slice.len() - 1]; // remove quotes
+                let obj_string = ObjString::new(trimmed); // create ObjString
+                                                          // TODO: store a strings table, and do interning and stuff
+                return Value::new(ValType::ValStringType, ValData::ValObj(Rc::new(obj_string)));
             }
             _ => panic!(
                 "Expected a valid constant, received {:?} as a token instead",
@@ -310,7 +327,9 @@ impl<'a> Compiler<'a> {
                 Some(token) => {
                     // check if the token is a grouping
                     if is_group_start(&token) {
-                        operator_stack.push(token_to_operator(&token));
+                        if let Some(operator) = top_of(&operand_type_stack) {
+                            operator_stack.push(token_to_operator(&token, operator));
+                        }
                         continue;
                     } else if is_group_end(&token) {
                         dump_stack(&mut operator_stack, &mut operand_type_stack, self);
@@ -325,8 +344,14 @@ impl<'a> Compiler<'a> {
                     }
                     // compile operator
                     else {
-                        let operator = token_to_operator(&Self::assert_is_operator(self, token));
-                        let top_of_operator_stack: &Operations = top_of(&operator_stack);
+                        println!("this is the top of the operand type stack when comipling the operater: {:?}", top_of(&operand_type_stack).unwrap());
+                        let operator = token_to_operator(
+                            &Self::assert_is_operator(self, token),
+                            top_of(&operand_type_stack).unwrap(),
+                        );
+                        println!("This is the operator: {:?}", operator);
+                        let top_of_operator_stack: &Operations =
+                            top_of(&operator_stack).unwrap_or(&Operations::NoOp);
                         // if the new operator is of a higher precedence than the last, push it onto the
                         // stack
                         if prec_of(&operator) > prec_of(top_of_operator_stack) {
@@ -350,6 +375,7 @@ impl<'a> Compiler<'a> {
 
 mod tests {
     use super::*;
+    use fmt::Write;
     use Operations::*;
 
     #[test]
@@ -463,5 +489,58 @@ mod tests {
         let code: &String = &String::from("1 * false + 2");
         let mut compiler: Compiler = Compiler::new(code);
         compiler.expression();
+    }
+
+    #[test]
+    fn compile_a_string_literal() {
+        let instruction_buffer: Vec<Instruction>;
+        let mut my_string = String::from('"');
+        my_string.push_str("hello");
+        my_string.write_char('"').unwrap();
+        let mut compiler: Compiler = Compiler::new(&my_string);
+        compiler.expression();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0)
+            ],
+        );
+
+        assert_eq!(&compiler.constants, &vec![Value::from_string("hello"),]);
+    }
+
+    #[test]
+    fn compile_string_concat() {
+        let instruction_buffer: Vec<Instruction>;
+        let mut my_string_1 = String::from('"');
+        my_string_1.push_str("hello");
+        my_string_1.write_char('"').unwrap();
+        let mut my_string_2 = String::from('"');
+        my_string_2.push_str("world");
+        my_string_2.write_char('"').unwrap();
+        let my_string_3 = String::from(" + ");
+        my_string_1.push_str(&my_string_3);
+        my_string_1.push_str(&my_string_2);
+        println!("THIS IS THE STRING: {}", my_string_1);
+        let mut compiler: Compiler = Compiler::new(&my_string_1);
+        compiler.expression();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpConcat),
+            ],
+        );
+
+        assert_eq!(
+            &compiler.constants,
+            &vec![Value::from_string("hello"), Value::from_string(" world")]
+        );
     }
 }

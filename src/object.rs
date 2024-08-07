@@ -19,12 +19,24 @@ pub trait Object {
 }
 
 pub struct ObjString {
-    charData: String,
+    char_data: String,
+}
+
+impl ObjString {
+    pub fn new(string: &str) -> Self {
+        ObjString {
+            char_data: String::from(string),
+        }
+    }
+
+    pub fn new_from_heap(string: String) -> Self {
+        ObjString { char_data: string }
+    }
 }
 
 impl Object for ObjString {
     fn get_string(&self) -> &str {
-        &self.charData
+        &self.char_data
     }
 }
 

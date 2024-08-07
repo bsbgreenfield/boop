@@ -41,6 +41,7 @@ pub enum Token {
     TkFor,
     TkAnd,
     TkOr,
+    TkString,
     TkEof,
     TkErr,
 }
@@ -163,6 +164,17 @@ impl<'a> Parser<'a> {
         return None;
     }
 
+    fn try_parse_string(&mut self) -> Option<Token> {
+        while let Some(char) = self.next_char() {
+            if char == '"' {
+                return Some(Token::TkString);
+            } else {
+                continue;
+            }
+        }
+        return None;
+    }
+
     pub fn parse_next(&mut self) -> Option<Token> {
         use Token::*;
 
@@ -176,21 +188,22 @@ impl<'a> Parser<'a> {
             } else if let Some(token) = Self::try_parse_keyword(self, char) {
                 return Some(token);
             } else {
-                let token = match char {
-                    '+' => TkPlus,
-                    '-' => TkMinus,
-                    ';' => TkSemicolon,
-                    '=' => TkEquals,
-                    '*' => TkStar,
-                    '/' => TkSlash,
-                    '(' => TkOpenParen,
-                    ')' => TkCloseParen,
+                let some_token = match char {
+                    '"' => Self::try_parse_string(self),
+                    '+' => Some(TkPlus),
+                    '-' => Some(TkMinus),
+                    ';' => Some(TkSemicolon),
+                    '=' => Some(TkEquals),
+                    '*' => Some(TkStar),
+                    '/' => Some(TkSlash),
+                    '(' => Some(TkOpenParen),
+                    ')' => Some(TkCloseParen),
                     _ => {
                         println!("tried to parse unknown symbol: {}", char);
-                        TkErr
+                        Some(TkErr)
                     }
                 };
-                return Some(token);
+                return some_token;
             }
         }
         return None;
@@ -199,6 +212,8 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write;
+
     use super::*;
     use Token::*;
     fn parse_everything(parser: &mut Parser, token_buffer: &mut Vec<Token>) {
@@ -278,5 +293,34 @@ mod tests {
         let mut parser = Parser::new("true and false or false");
         parse_everything(&mut parser, &mut token_buffer);
         assert_eq!(&vec![TkTrue, TkAnd, TkFalse, TkOr, TkFalse,], &token_buffer,);
+    }
+
+    #[test]
+    fn parse_a_string_literal() {
+        let mut token_buffer: Vec<Token> = Vec::new();
+        let mut my_string = String::from('"');
+        my_string.push_str("hello");
+        my_string.write_char('"').unwrap();
+        let mut parser = Parser::new(&my_string);
+        parse_everything(&mut parser, &mut token_buffer);
+        assert_eq!(&vec![TkString], &token_buffer,);
+    }
+
+    #[test]
+    fn parse_string_concat() {
+        let mut token_buffer: Vec<Token> = Vec::new();
+        let mut my_string_1 = String::from('"');
+        my_string_1.push_str("hello");
+        my_string_1.write_char('"').unwrap();
+        let mut my_string_2 = String::from('"');
+        my_string_2.push_str("world");
+        my_string_2.write_char('"').unwrap();
+        let my_string_3 = String::from(" + ");
+        my_string_1.push_str(&my_string_3);
+        my_string_1.push_str(&my_string_2);
+        let mut parser = Parser::new(&my_string_1);
+        parse_everything(&mut parser, &mut token_buffer);
+
+        assert_eq!(&vec![TkString, TkPlus, TkString], &token_buffer,);
     }
 }

@@ -8,6 +8,7 @@ use crate::object::{ObjString, Object};
 pub enum ValType {
     ValNumType,
     ValBoolType,
+    ValStringType,
 }
 
 pub enum ValData {
@@ -33,6 +34,14 @@ impl ValData {
             *boolean
         } else {
             panic!("This is not a bool type");
+        }
+    }
+
+    pub fn unwrap_str(&self) -> &str {
+        if let ValData::ValObj(obj_string_ref) = self {
+            obj_string_ref.get_string()
+        } else {
+            panic!("you tried to unwrap string from an object that isnt a string...");
         }
     }
 }
@@ -118,6 +127,13 @@ impl Value {
         Value {
             val_type: ValType::ValBoolType,
             data: ValData::ValBool(boolean),
+        }
+    }
+
+    pub fn from_string(string: &str) -> Self {
+        Value {
+            val_type: ValType::ValStringType,
+            data: ValData::ValObj(Rc::new(ObjString::new(string))),
         }
     }
 }

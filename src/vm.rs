@@ -1,8 +1,9 @@
 use core::panic;
-use std::path::Iter;
+use std::{path::Iter, rc::Rc};
 
 use crate::{
     compiler::{Compiler, Instruction, Operations},
+    object::ObjString,
     value::{ValData, Value},
 };
 
@@ -69,6 +70,16 @@ impl<'a> Vm<'a> {
                             let second_num = self.stack.pop().unwrap().unwrap_int();
                             self.stack.push(ValData::ValNum(first_num / second_num));
                             println!("OP DIVIDE: {:?}", &self.stack);
+                        }
+                        Operations::OpConcat => {
+                            let first_string = self.stack.pop().unwrap();
+                            let second_string = self.stack.pop().unwrap();
+                            let mut concat = String::from(second_string.unwrap_str());
+                            concat.push_str(first_string.unwrap_str());
+                            self.stack
+                                .push(ValData::ValObj(Rc::new(ObjString::new_from_heap(concat))));
+                            println!("OP DIVIDE: {:?}", &self.stack);
+                            println!("new string is {:?}", self.stack.pop().unwrap().unwrap_str());
                         }
                         _ => panic!("not implemented"),
                     },
