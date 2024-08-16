@@ -27,7 +27,8 @@ impl<'a> Vm<'a> {
     }
 
     pub fn run(&'a mut self) -> Result<(), RuntimeError> {
-        self.compiler.expression();
+        use Operations::*;
+        self.compiler.statement();
         let instructions = &mut self.compiler.code;
         let mut instr_iter = instructions.iter();
         loop {
@@ -47,31 +48,31 @@ impl<'a> Vm<'a> {
                                 }
                             }
                         }
-                        Operations::OpAdd => {
+                        OpAdd => {
                             let first_num = self.stack.pop().unwrap().unwrap_int();
                             let second_num = self.stack.pop().unwrap().unwrap_int();
                             self.stack.push(ValData::ValNum(first_num + second_num));
                             println!("OP ADD: {:?}", &self.stack);
                         }
-                        Operations::OpSubtract => {
+                        OpSubtract => {
                             let first_num = self.stack.pop().unwrap().unwrap_int();
                             let second_num = self.stack.pop().unwrap().unwrap_int();
                             self.stack.push(ValData::ValNum(first_num - second_num));
                             println!("OP SUBTRACT: {:?}", &self.stack);
                         }
-                        Operations::OpMultiply => {
+                        OpMultiply => {
                             let first_num = self.stack.pop().unwrap().unwrap_int();
                             let second_num = self.stack.pop().unwrap().unwrap_int();
                             self.stack.push(ValData::ValNum(first_num * second_num));
                             println!("OP MULTIPLY: {:?}", &self.stack);
                         }
-                        Operations::OpDivide => {
+                        OpDivide => {
                             let first_num = self.stack.pop().unwrap().unwrap_int();
                             let second_num = self.stack.pop().unwrap().unwrap_int();
                             self.stack.push(ValData::ValNum(first_num / second_num));
                             println!("OP DIVIDE: {:?}", &self.stack);
                         }
-                        Operations::OpConcat => {
+                        OpConcat => {
                             let first_string = self.stack.pop().unwrap();
                             let second_string = self.stack.pop().unwrap();
                             let mut concat = String::from(second_string.unwrap_str());
@@ -81,7 +82,15 @@ impl<'a> Vm<'a> {
                             println!("OP DIVIDE: {:?}", &self.stack);
                             println!("new string is {:?}", self.stack.pop().unwrap().unwrap_str());
                         }
-                        _ => panic!("not implemented"),
+                        OpGetLocal => todo!(),
+                        OpSetLocal => todo!(),
+                        OpAnd => todo!(),
+                        OpOr => todo!(),
+                        NoOp => todo!(),
+                        OpGrouping => panic!("compiler error..."),
+                        OpPop => {
+                            self.stack.pop();
+                        }
                     },
                     _ => panic!("expexted an operation, got {:?}", current_instruction),
                 }

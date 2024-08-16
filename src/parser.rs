@@ -2,10 +2,11 @@
 use core::panic;
 use std::{
     cell::LazyCell,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     error::Error,
     fmt::Debug,
     iter::Peekable,
+    rc::Rc,
     str::{Chars, SplitWhitespace},
     sync::LazyLock,
 };
@@ -42,6 +43,7 @@ pub enum Token {
     TkAnd,
     TkOr,
     TkString,
+    TkIdentifier,
     TkEof,
     TkErr,
 }
@@ -51,6 +53,7 @@ pub struct Parser<'a> {
     code_iter: Peekable<Chars<'a>>,
     start: usize,
     end: usize,
+    peeked: Option<Option<Token>>,
 }
 
 impl<'a> Parser<'a> {
@@ -60,6 +63,7 @@ impl<'a> Parser<'a> {
             code_iter: input.chars().peekable(),
             start: 0,
             end: 0,
+            peeked: None,
         }
     }
 
@@ -120,12 +124,12 @@ impl<'a> Parser<'a> {
     fn try_parse_keyword(&mut self, char: char) -> Option<Token> {
         match char {
             't' => {
-                return Self::match_keyword(self, "true", 1);
+                return self.match_keyword("true", 1);
             }
             'f' => match self.next_char() {
                 Some(next_char) => match next_char {
-                    'a' => return Self::match_keyword(self, "false", 2),
-                    'o' => return Self::match_keyword(self, "for", 2),
+                    'a' => return self.match_keyword("false", 2),
+                    'o' => return self.match_keyword("for", 2),
                     _ => return None,
                 },
                 None => None,
@@ -175,7 +179,34 @@ impl<'a> Parser<'a> {
         return None;
     }
 
+    fn try_parse_identifier(&mut self) -> Option<Token> {
+        while let Some(char) = self.next_char() {
+            match char {
+                '"' | '+' | '-' | '*' | '/' | '(' | ')' | ' ' => {
+                    return Some(Token::TkIdentifier);
+                }
+                _ => continue,
+            }
+        }
+        return None;
+    }
+
+    pub fn peek(&mut self) -> Option<Token> {
+        if let Some(maybe_token) = self.peeked {
+            return maybe_token;
+        } else {
+            self.peeked = Some(self.parse_next());
+            return self.peeked.unwrap();
+        }
+    }
+
     pub fn parse_next(&mut self) -> Option<Token> {
+        // if we have already peeked, return that value
+        match self.peeked.take() {
+            Some(maybe_token) => return maybe_token,
+            None => (),
+        }
+
         use Token::*;
 
         self.start = self.end;
@@ -183,9 +214,10 @@ impl<'a> Parser<'a> {
         let maybe_next_char: Option<char> = Self::skip_whitespace(self);
         // if we get a character, check if its a number, then check if its something else
         if let Some(char) = maybe_next_char {
-            if let Some(number) = Self::try_parse_num(self, char) {
+            if let Some(number) = self.try_parse_num(char) {
+                println!("TKNum");
                 return Some(TkNum);
-            } else if let Some(token) = Self::try_parse_keyword(self, char) {
+            } else if let Some(token) = self.try_parse_keyword(char) {
                 return Some(token);
             } else {
                 let some_token = match char {
@@ -198,14 +230,13 @@ impl<'a> Parser<'a> {
                     '/' => Some(TkSlash),
                     '(' => Some(TkOpenParen),
                     ')' => Some(TkCloseParen),
-                    _ => {
-                        println!("tried to parse unknown symbol: {}", char);
-                        Some(TkErr)
-                    }
+                    _ => self.try_parse_identifier(),
                 };
+                println!("{:?}", some_token.unwrap());
                 return some_token;
             }
         }
+        println!("None");
         return None;
     }
 }
@@ -322,5 +353,23 @@ mod tests {
         parse_everything(&mut parser, &mut token_buffer);
 
         assert_eq!(&vec![TkString, TkPlus, TkString], &token_buffer,);
+    }
+
+    #[test]
+    fn peek_a_token() {
+        let mut token_buffer: Vec<Token> = Vec::new();
+        let mut parser = Parser::new("1 + 2");
+        let maybe_peeked = parser.peek();
+        assert_eq!(maybe_peeked, Some(TkNum)); // should be token for 1
+        assert_eq!(parser.peeked, Some(Some(TkNum)));
+        let peeked_again = parser.peek();
+        assert_eq!(peeked_again, Some(TkNum)); // should still be token for 1
+        let maybe_next = parser.parse_next();
+        assert_eq!(maybe_next, Some(TkNum)); // should have returned peeked value
+        assert_eq!(parser.peeked, None); // peeked should now be none
+        let maybe_operator = parser.parse_next();
+        assert_eq!(maybe_operator, Some(TkPlus));
+        let maybe_peeked_last = parser.peek();
+        assert_eq!(maybe_peeked_last, Some(TkNum));
     }
 }
