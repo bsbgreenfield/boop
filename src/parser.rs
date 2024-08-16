@@ -230,6 +230,7 @@ impl<'a> Parser<'a> {
                     '/' => Some(TkSlash),
                     '(' => Some(TkOpenParen),
                     ')' => Some(TkCloseParen),
+                    ';' => Some(TkSemicolon),
                     _ => self.try_parse_identifier(),
                 };
                 println!("{:?}", some_token.unwrap());
