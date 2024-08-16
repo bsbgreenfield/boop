@@ -1,5 +1,5 @@
 use core::panic;
-use std::{path::Iter, rc::Rc};
+use std::{path::Iter, rc::Rc, usize};
 
 use crate::{
     compiler::{Compiler, Instruction, Operations},
@@ -82,7 +82,17 @@ impl<'a> Vm<'a> {
                             println!("OP DIVIDE: {:?}", &self.stack);
                             println!("new string is {:?}", self.stack.pop().unwrap().unwrap_str());
                         }
-                        OpGetLocal => todo!(),
+                        OpGetLocal => {
+                            if let Some(idx_instr) = instr_iter.next() {
+                                match idx_instr {
+                                    Instruction::ConstantIdx(idx) => {
+                                        let local: ValData = self.stack[*idx as usize].clone();
+                                        self.stack.push(local);
+                                    }
+                                    _ => (),
+                                }
+                            }
+                        }
                         OpSetLocal => todo!(),
                         OpAnd => todo!(),
                         OpOr => todo!(),
@@ -92,7 +102,7 @@ impl<'a> Vm<'a> {
                             self.stack.pop();
                         }
                     },
-                    _ => panic!("expexted an operation, got {:?}", current_instruction),
+                    _ => panic!("expected an operation, got {:?}", current_instruction),
                 }
             } else {
                 break;
