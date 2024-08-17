@@ -30,6 +30,7 @@ pub enum Operations {
     OpGrouping,
     OpGetLocal,
     OpSetLocal,
+    OpPrint,
 }
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
 enum Precedence {
@@ -89,6 +90,7 @@ fn prec_of(operation: &Operations) -> Precedence {
         OpGrouping => PrecNone,
         OpGetLocal => PrecPrimary,
         OpSetLocal => PrecAssignment,
+        OpPrint => PrecNone,
     }
 }
 
@@ -274,7 +276,7 @@ impl<'a> Compiler<'a> {
             TkAnd => OpAnd,
             TkOr => OpOr,
             TkFalse | TkTrue | TkEof | TkErr | TkFor | TkSemicolon | TkNum | TkCloseParen
-            | TkEquals | TkString | TkIdentifier => {
+            | TkEquals | TkString | TkIdentifier | TkPrint => {
                 panic!("Expected an operator token, got {:?}", token);
             }
         };
@@ -328,6 +330,7 @@ impl<'a> Compiler<'a> {
                 }
                 Token::TkFor => todo!(),
                 Token::TkIdentifier => self.variable(),
+                Token::TkPrint => self.print_statement(),
                 Token::TkPlus
                 | Token::TkMinus
                 | Token::TkStar
@@ -343,7 +346,6 @@ impl<'a> Compiler<'a> {
                 }
             }
             if let Some(maybe_semicolon) = self.parser.parse_next() {
-                println!("{:?}", self.code);
                 match maybe_semicolon {
                     Token::TkSemicolon => return true,
                     _ => panic!(
@@ -357,6 +359,12 @@ impl<'a> Compiler<'a> {
         } else {
             return false; // EOF no error
         }
+    }
+
+    fn print_statement(&mut self) {
+        self.parser.parse_next(); // consume the print statement
+        self.expression(None);
+        self.emit_operation(Operations::OpPrint);
     }
 
     fn has_variable(&self, name: &str) -> Option<usize> {
@@ -374,8 +382,7 @@ impl<'a> Compiler<'a> {
     fn variable(&mut self) {
         let maybe_operand = self.parser.parse_next(); // parse the identifier. If this turns out to be an expression
                                                       // statement, we have to let it know that we already parsed one of its operands, oops!
-        let var_name = self.parser.get_curr_slice().trim_end();
-        println!("varname!!!!!!!!!!!!!!!!! {}", var_name);
+        let var_name = self.parser.get_curr_slice();
         if let Some(type_ident) = self.types.get(var_name) {
             return self.variable_declaration(match_val_type(type_ident));
         }
@@ -392,10 +399,6 @@ impl<'a> Compiler<'a> {
                     self.assignment(local_idx);
                 }
                 _ => {
-                    println!(
-                        "THis is the special expression statement, and the token is {:?}",
-                        maybe_operand
-                    );
                     self.expression_statement(maybe_operand.as_ref());
                 }
             }
@@ -403,7 +406,6 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn variable_declaration(&mut self, var_type: ValType) -> () {
-        println!("in var dec");
         self.parser.parse_next(); // identifier
         let name = self.parser.get_curr_slice().to_owned();
         if let Some(_) = self.has_variable(&name) {
@@ -417,7 +419,7 @@ impl<'a> Compiler<'a> {
             if var_type != return_type {
                 panic!("cannot assign type {:?} to {:?}", var_type, return_type);
             }
-            let local = Local::new(String::from(name.trim_end()), self.scope_depth);
+            let local = Local::new(String::from(name), self.scope_depth);
             self.locals.push(local);
         }
     }
@@ -438,7 +440,6 @@ impl<'a> Compiler<'a> {
         let mut operand_type_stack: Vec<ValType> = Vec::new();
         let mut operand_phase: bool = true;
         if let Some(parsed_operand) = maybe_parsed_operand {
-            println!("this is the special condition");
             self.compile_operand(parsed_operand, &mut operand_type_stack);
             operand_phase = false;
         }
@@ -512,9 +513,7 @@ impl<'a> Compiler<'a> {
         self.assert_is_constant(token);
         // if this is a variable, get local, else emit constant
         if token == &Token::TkIdentifier {
-            let ident = self.parser.get_curr_slice().trim_end(); // TODO: stop the parser from
-                                                                 // giving us whitespace!!
-            println!("this is the ident: '{}'", ident);
+            let ident = self.parser.get_curr_slice();
             let idx = self.has_variable(ident).unwrap();
             self.emit_get_local(idx);
         } else {
@@ -569,6 +568,7 @@ impl<'a> Compiler<'a> {
                                 }
                             }
                             Operations::OpConstant
+                            | Operations::OpPrint
                             | Operations::OpSetLocal
                             | Operations::OpGetLocal
                             | Operations::NoOp
@@ -808,6 +808,76 @@ mod tests {
         assert_eq!(
             &compiler.constants,
             &vec![Value::from_num(1), Value::from_num(2)]
+        );
+    }
+
+    #[test]
+    fn compile_set_local() {
+        let code = String::from("int myNumber = 10; myNumber =  20;");
+        let mut compiler = Compiler::new(&code);
+        compiler.statement();
+        compiler.statement();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpSetLocal),
+                Instruction::from_constant_idx(0),
+            ]
+        )
+    }
+
+    #[test]
+    fn compile_print_statement() {
+        let code = String::from("String myString = \"hello!\"; print myString; ");
+        let mut compiler = Compiler::new(&code);
+
+        compiler.statement();
+        compiler.statement();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpGetLocal),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpPrint),
+            ]
+        )
+    }
+
+    #[test]
+    fn compile_local_strings() {
+        let code = String::from("String benji = \"benji\"; String camille = \" camille\"; String both = benji + camille; print both; ");
+
+        let mut compiler = Compiler::new(&code);
+
+        compiler.statement();
+        compiler.statement();
+        compiler.statement();
+        compiler.statement();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpGetLocal),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpGetLocal),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpConcat),
+                Instruction::from_operation(OpGetLocal),
+                Instruction::from_constant_idx(2),
+                Instruction::from_operation(OpPrint)
+            ]
         );
     }
 }

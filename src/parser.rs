@@ -20,6 +20,7 @@ fn generate_keyword_hash() -> HashMap<&'static str, Token> {
     result.insert("for", Token::TkFor);
     result.insert("and", Token::TkAnd);
     result.insert("or", Token::TkOr);
+    result.insert("print", Token::TkPrint);
 
     result
 }
@@ -44,6 +45,7 @@ pub enum Token {
     TkOr,
     TkString,
     TkIdentifier,
+    TkPrint,
     TkEof,
     TkErr,
 }
@@ -138,8 +140,9 @@ impl<'a> Parser<'a> {
                 },
                 None => None,
             },
-            'a' => return Self::match_keyword(self, "and", 1),
-            'o' => return Self::match_keyword(self, "or", 1),
+            'a' => return self.match_keyword("and", 1),
+            'o' => return self.match_keyword("or", 1),
+            'p' => return self.match_keyword("print", 1),
             _ => None,
         }
     }
@@ -184,27 +187,25 @@ impl<'a> Parser<'a> {
     }
 
     fn try_parse_identifier(&mut self) -> Option<Token> {
-        while let Some(char) = self.next_char() {
+        while let Some(char) = self.code_iter.peek() {
             match char {
-                '"' | '+' | '-' | '*' | '/' | '(' | ')' | ' ' => {
+                '"' | '+' | '-' | '*' | '/' | '(' | ')' | ' ' | ';' => {
                     return Some(Token::TkIdentifier);
                 }
-                _ => continue,
-            }
+                _ => self.next_char(),
+            };
         }
         return None;
     }
 
     pub fn peek(&mut self) -> Option<Token> {
         if let Some(maybe_token) = self.peeked {
-            println!("nothing in peeked right now");
             return maybe_token;
         } else {
             // save the current slice indices
             let start = self.start;
             let end = self.end;
             self.peeked = Some(self.parse_next());
-            println!("setting start to {} and end to {}", start, end);
             // store the new slice indices in peeked_start/ peeked_end
             self.peeked_start = self.start;
             self.peeked_end = self.end;
@@ -217,50 +218,49 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_next(&mut self) -> Option<Token> {
-        // if we have already peeked, return that value
-        match self.peeked.take() {
-            Some(maybe_token) => {
-                // restore start and end to the vars we saved after peeking
-                self.start = self.peeked_start;
-                self.end = self.peeked_end;
-                return maybe_token;
-            }
-
-            None => (),
-        }
-
         use Token::*;
 
-        self.start = self.end;
-        // call code_iter.next() until either we get a character or we get None
-        let maybe_next_char: Option<char> = Self::skip_whitespace(self);
-        // if we get a character, check if its a number, then check if its something else
-        if let Some(char) = maybe_next_char {
-            if let Some(number) = self.try_parse_num(char) {
-                println!("TKNum");
-                return Some(TkNum);
-            } else if let Some(token) = self.try_parse_keyword(char) {
-                return Some(token);
-            } else {
-                let some_token = match char {
-                    '"' => Self::try_parse_string(self),
-                    '+' => Some(TkPlus),
-                    '-' => Some(TkMinus),
-                    ';' => Some(TkSemicolon),
-                    '=' => Some(TkEquals),
-                    '*' => Some(TkStar),
-                    '/' => Some(TkSlash),
-                    '(' => Some(TkOpenParen),
-                    ')' => Some(TkCloseParen),
-                    ';' => Some(TkSemicolon),
-                    _ => self.try_parse_identifier(),
-                };
-                println!("{:?}", some_token.unwrap());
-                return some_token;
+        let mut return_token: Option<Token> = None;
+
+        // if we have already peeked, return that value
+        if let Some(peeked_token) = self.peeked.take() {
+            self.start = self.peeked_start;
+            self.end = self.peeked_end;
+            return_token.insert(peeked_token?);
+        } else {
+            self.start = self.end;
+            // call code_iter.next() until either we get a character or we get None
+            let maybe_next_char: Option<char> = self.skip_whitespace();
+            // if we get a character, check if its a number, then check if its something else
+            if let Some(char) = maybe_next_char {
+                if let Some(number) = self.try_parse_num(char) {
+                    return_token.insert(TkNum);
+                } else if let Some(token) = self.try_parse_keyword(char) {
+                    return_token.insert(token);
+                } else {
+                    let some_token = match char {
+                        '"' => self.try_parse_string(),
+                        '+' => Some(TkPlus),
+                        '-' => Some(TkMinus),
+                        ';' => Some(TkSemicolon),
+                        '=' => Some(TkEquals),
+                        '*' => Some(TkStar),
+                        '/' => Some(TkSlash),
+                        '(' => Some(TkOpenParen),
+                        ')' => Some(TkCloseParen),
+                        ';' => Some(TkSemicolon),
+                        _ => self.try_parse_identifier(),
+                    };
+                    return_token.insert(some_token?);
+                }
             }
         }
-        println!("None");
-        return None;
+        if let Some(token) = return_token {
+            println!("parsed: {:?}", token);
+        } else {
+            println!("parsed: EOF");
+        }
+        return return_token;
     }
 }
 

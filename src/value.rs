@@ -44,6 +44,19 @@ impl ValData {
             panic!("you tried to unwrap string from an object that isnt a string...");
         }
     }
+
+    pub fn print_value(&self) {
+        match self {
+            ValData::ValNum(num) => println!("{num}"),
+            ValData::ValBool(boolean) => println!("{boolean}"),
+            ValData::ValObj(obj) => match obj.get_type() {
+                crate::object::ObjType::ObjStringType => {
+                    println!("{}", obj.get_string());
+                }
+                _ => panic!("printing has not yet been implemented for this type!"),
+            },
+        }
+    }
 }
 
 impl Clone for ValData {
@@ -61,8 +74,18 @@ impl Debug for ValData {
         match self {
             ValData::ValNum(num) => write!(f, "{num}"),
             ValData::ValBool(boolean) => write!(f, "{boolean}"),
-            ValData::ValObj(obj) => write!(f, "ValObj"),
+            ValData::ValObj(obj) => debug_print_obj(f, obj),
         }
+    }
+}
+
+fn debug_print_obj(f: &mut std::fmt::Formatter<'_>, obj: &Rc<dyn Object>) -> std::fmt::Result {
+    match obj.get_type() {
+        crate::object::ObjType::ObjStringType => {
+            let string = obj.get_string();
+            return write!(f, "{string}");
+        }
+        _ => write!(f, "ValObj"),
     }
 }
 

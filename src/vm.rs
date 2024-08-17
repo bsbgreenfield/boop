@@ -46,7 +46,7 @@ impl<'a> Vm<'a> {
                                         let val: ValData =
                                             self.compiler.constants[*idx as usize].data.clone();
                                         self.stack.push(val);
-                                        println!("OP CONSTANT: {:?}", &self.stack);
+                                        print!("OP CONSTANT: {:?} |     ", &idx);
                                     }
                                     _ => panic!("expected an idx"),
                                 }
@@ -56,25 +56,25 @@ impl<'a> Vm<'a> {
                             let second_num = self.stack.pop().unwrap().unwrap_int();
                             let first_num = self.stack.pop().unwrap().unwrap_int();
                             self.stack.push(ValData::ValNum(first_num + second_num));
-                            println!("OP ADD: {:?}", &self.stack);
+                            print!("OP ADD |     ");
                         }
                         OpSubtract => {
                             let second_num = self.stack.pop().unwrap().unwrap_int();
                             let first_num = self.stack.pop().unwrap().unwrap_int();
                             self.stack.push(ValData::ValNum(first_num - second_num));
-                            println!("OP SUBTRACT: {:?}", &self.stack);
+                            print!("OP SUBTRACT |     ");
                         }
                         OpMultiply => {
                             let second_num = self.stack.pop().unwrap().unwrap_int();
                             let first_num = self.stack.pop().unwrap().unwrap_int();
                             self.stack.push(ValData::ValNum(first_num * second_num));
-                            println!("OP MULTIPLY: {:?}", &self.stack);
+                            print!("OP MULTIPLY |     ");
                         }
                         OpDivide => {
                             let second_num = self.stack.pop().unwrap().unwrap_int();
                             let first_num = self.stack.pop().unwrap().unwrap_int();
                             self.stack.push(ValData::ValNum(first_num / second_num));
-                            println!("OP DIVIDE: {:?}", &self.stack);
+                            print!("OP DIVIDE |     ");
                         }
                         OpConcat => {
                             let first_string = self.stack.pop().unwrap();
@@ -83,8 +83,7 @@ impl<'a> Vm<'a> {
                             concat.push_str(first_string.unwrap_str());
                             self.stack
                                 .push(ValData::ValObj(Rc::new(ObjString::new_from_heap(concat))));
-                            println!("OP CONCAT: {:?}", &self.stack);
-                            println!("new string is {:?}", self.stack.pop().unwrap().unwrap_str());
+                            print!("OP CONCAT |         ");
                         }
                         OpGetLocal => {
                             if let Some(idx_instr) = instr_iter.next() {
@@ -92,7 +91,7 @@ impl<'a> Vm<'a> {
                                     Instruction::ConstantIdx(idx) => {
                                         let local: ValData = self.stack[*idx as usize].clone();
                                         self.stack.push(local);
-                                        println!("OP GET LOCAL: {}", idx);
+                                        print!("OP GET LOCAL: {} |     ", idx);
                                     }
                                     _ => (),
                                 }
@@ -104,25 +103,39 @@ impl<'a> Vm<'a> {
                                 Instruction::ConstantIdx(idx) => {
                                     let new_value = self.stack.pop().unwrap();
                                     self.stack[*idx as usize] = new_value;
-                                    println!("OP_SET_LOCAL: {} -- {:?}", idx, self.stack);
+                                    println!("OP_SET_LOCAL: {} |     ", idx);
                                 }
                                 _ => panic!("expected an idx of the local to set"),
                             }
+                        }
+                        OpPrint => {
+                            self.stack.pop().unwrap().print_value();
                         }
                         OpAnd => todo!(),
                         OpOr => todo!(),
                         NoOp => todo!(),
                         OpGrouping => panic!("compiler error..."),
                         OpPop => {
+                            print!("OP_POP");
                             self.stack.pop();
                         }
                     },
                     _ => panic!("expected an operation, got {:?}", current_instruction),
                 }
+                println!("{:?}", &self.stack);
             } else {
                 break;
             }
         }
         Ok(())
     }
+}
+
+fn debug_print_vm(current_instruction: Instruction, stack: &Vec<ValData>) {
+    match current_instruction {
+        Instruction::Operation(op) => print!("{:?}", op),
+        Instruction::ConstantIdx(idx) => print!(": {:?}", idx),
+    }
+    print!(" |     ");
+    println!("{:?}", stack);
 }
