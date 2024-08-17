@@ -59,10 +59,8 @@ impl Clone for ValData {
 impl Debug for ValData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ValData::ValNum(num) => f.debug_struct("ValNum").field("num", num).finish(),
-            ValData::ValBool(boolean) => {
-                f.debug_struct("ValBool").field("boolean", boolean).finish()
-            }
+            ValData::ValNum(num) => write!(f, "{num}"),
+            ValData::ValBool(boolean) => write!(f, "{boolean}"),
             ValData::ValObj(obj) => write!(f, "ValObj"),
         }
     }

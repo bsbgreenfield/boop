@@ -156,7 +156,7 @@ impl<'a> Parser<'a> {
 
     fn skip_whitespace(&mut self) -> Option<char> {
         while let Some(char) = self.code_iter.next() {
-            if char == ' ' {
+            if char == ' ' || char == 0xA as char {
                 // while searching for the next item, increment end and start
                 self.start += 1;
                 continue;

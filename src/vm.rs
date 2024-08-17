@@ -28,7 +28,11 @@ impl<'a> Vm<'a> {
 
     pub fn run(&'a mut self) -> Result<(), RuntimeError> {
         use Operations::*;
-        self.compiler.statement();
+        loop {
+            if self.compiler.statement() == false {
+                break;
+            }
+        }
         let instructions = &mut self.compiler.code;
         let mut instr_iter = instructions.iter();
         loop {
@@ -79,7 +83,7 @@ impl<'a> Vm<'a> {
                             concat.push_str(first_string.unwrap_str());
                             self.stack
                                 .push(ValData::ValObj(Rc::new(ObjString::new_from_heap(concat))));
-                            println!("OP DIVIDE: {:?}", &self.stack);
+                            println!("OP CONCAT: {:?}", &self.stack);
                             println!("new string is {:?}", self.stack.pop().unwrap().unwrap_str());
                         }
                         OpGetLocal => {
@@ -88,12 +92,22 @@ impl<'a> Vm<'a> {
                                     Instruction::ConstantIdx(idx) => {
                                         let local: ValData = self.stack[*idx as usize].clone();
                                         self.stack.push(local);
+                                        println!("OP GET LOCAL: {}", idx);
                                     }
                                     _ => (),
                                 }
                             }
                         }
-                        OpSetLocal => todo!(),
+                        OpSetLocal => {
+                            let idx_instr = instr_iter.next().unwrap();
+                            match idx_instr {
+                                Instruction::ConstantIdx(idx) => {
+                                    let new_value = self.stack.pop().unwrap();
+                                    self.stack[*idx as usize] = new_value;
+                                }
+                                _ => panic!("expected an idx of the local to set"),
+                            }
+                        }
                         OpAnd => todo!(),
                         OpOr => todo!(),
                         NoOp => todo!(),
