@@ -372,7 +372,10 @@ impl<'a> Compiler<'a> {
     }
 
     fn variable(&mut self) {
+        let maybe_operand = self.parser.parse_next(); // parse the identifier. If this turns out to be an expression
+                                                      // statement, we have to let it know that we already parsed one of its operands, oops!
         let var_name = self.parser.get_curr_slice().trim_end();
+        println!("varname!!!!!!!!!!!!!!!!! {}", var_name);
         if let Some(type_ident) = self.types.get(var_name) {
             return self.variable_declaration(match_val_type(type_ident));
         }
@@ -382,22 +385,25 @@ impl<'a> Compiler<'a> {
             Some(local_idx) => local_idx,
             None => panic!("unknown variable {}", var_name),
         };
-        let maybe_operand = self.parser.parse_next(); // parse the identifier. If this turns out to be an expression
-                                                      // statement, we have to let it know that we already parsed one of its operands, oops!
         if let Some(maybe_equals) = self.parser.peek() {
             match maybe_equals {
                 Token::TkEquals => {
                     self.parser.parse_next(); // consume the equals sign
                     self.assignment(local_idx);
                 }
-                _ => self.expression_statement(maybe_operand.as_ref()),
+                _ => {
+                    println!(
+                        "THis is the special expression statement, and the token is {:?}",
+                        maybe_operand
+                    );
+                    self.expression_statement(maybe_operand.as_ref());
+                }
             }
         }
     }
 
     pub fn variable_declaration(&mut self, var_type: ValType) -> () {
         println!("in var dec");
-        self.parser.parse_next(); // type name
         self.parser.parse_next(); // identifier
         let name = self.parser.get_curr_slice().to_owned();
         if let Some(_) = self.has_variable(&name) {
@@ -432,6 +438,7 @@ impl<'a> Compiler<'a> {
         let mut operand_type_stack: Vec<ValType> = Vec::new();
         let mut operand_phase: bool = true;
         if let Some(parsed_operand) = maybe_parsed_operand {
+            println!("this is the special condition");
             self.compile_operand(parsed_operand, &mut operand_type_stack);
             operand_phase = false;
         }
@@ -507,6 +514,7 @@ impl<'a> Compiler<'a> {
         if token == &Token::TkIdentifier {
             let ident = self.parser.get_curr_slice().trim_end(); // TODO: stop the parser from
                                                                  // giving us whitespace!!
+            println!("this is the ident: '{}'", ident);
             let idx = self.has_variable(ident).unwrap();
             self.emit_get_local(idx);
         } else {

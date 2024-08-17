@@ -51,6 +51,8 @@ pub enum Token {
 pub struct Parser<'a> {
     code_text: &'a str,
     code_iter: Peekable<Chars<'a>>,
+    peeked_start: usize,
+    peeked_end: usize,
     start: usize,
     end: usize,
     peeked: Option<Option<Token>>,
@@ -61,6 +63,8 @@ impl<'a> Parser<'a> {
         Parser {
             code_text: input,
             code_iter: input.chars().peekable(),
+            peeked_start: 0,
+            peeked_end: 0,
             start: 0,
             end: 0,
             peeked: None,
@@ -193,9 +197,21 @@ impl<'a> Parser<'a> {
 
     pub fn peek(&mut self) -> Option<Token> {
         if let Some(maybe_token) = self.peeked {
+            println!("nothing in peeked right now");
             return maybe_token;
         } else {
+            // save the current slice indices
+            let start = self.start;
+            let end = self.end;
             self.peeked = Some(self.parse_next());
+            println!("setting start to {} and end to {}", start, end);
+            // store the new slice indices in peeked_start/ peeked_end
+            self.peeked_start = self.start;
+            self.peeked_end = self.end;
+
+            // set start and end back to what they were before
+            self.start = start;
+            self.end = end;
             return self.peeked.unwrap();
         }
     }
@@ -203,7 +219,13 @@ impl<'a> Parser<'a> {
     pub fn parse_next(&mut self) -> Option<Token> {
         // if we have already peeked, return that value
         match self.peeked.take() {
-            Some(maybe_token) => return maybe_token,
+            Some(maybe_token) => {
+                // restore start and end to the vars we saved after peeking
+                self.start = self.peeked_start;
+                self.end = self.peeked_end;
+                return maybe_token;
+            }
+
             None => (),
         }
 
