@@ -53,26 +53,26 @@ impl<'a> Vm<'a> {
                             }
                         }
                         OpAdd => {
-                            let first_num = self.stack.pop().unwrap().unwrap_int();
                             let second_num = self.stack.pop().unwrap().unwrap_int();
+                            let first_num = self.stack.pop().unwrap().unwrap_int();
                             self.stack.push(ValData::ValNum(first_num + second_num));
                             println!("OP ADD: {:?}", &self.stack);
                         }
                         OpSubtract => {
-                            let first_num = self.stack.pop().unwrap().unwrap_int();
                             let second_num = self.stack.pop().unwrap().unwrap_int();
+                            let first_num = self.stack.pop().unwrap().unwrap_int();
                             self.stack.push(ValData::ValNum(first_num - second_num));
                             println!("OP SUBTRACT: {:?}", &self.stack);
                         }
                         OpMultiply => {
-                            let first_num = self.stack.pop().unwrap().unwrap_int();
                             let second_num = self.stack.pop().unwrap().unwrap_int();
+                            let first_num = self.stack.pop().unwrap().unwrap_int();
                             self.stack.push(ValData::ValNum(first_num * second_num));
                             println!("OP MULTIPLY: {:?}", &self.stack);
                         }
                         OpDivide => {
-                            let first_num = self.stack.pop().unwrap().unwrap_int();
                             let second_num = self.stack.pop().unwrap().unwrap_int();
+                            let first_num = self.stack.pop().unwrap().unwrap_int();
                             self.stack.push(ValData::ValNum(first_num / second_num));
                             println!("OP DIVIDE: {:?}", &self.stack);
                         }
@@ -104,6 +104,7 @@ impl<'a> Vm<'a> {
                                 Instruction::ConstantIdx(idx) => {
                                     let new_value = self.stack.pop().unwrap();
                                     self.stack[*idx as usize] = new_value;
+                                    println!("OP_SET_LOCAL: {} -- {:?}", idx, self.stack);
                                 }
                                 _ => panic!("expected an idx of the local to set"),
                             }

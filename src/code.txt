@@ -1,3 +1,4 @@
 int myNumber = 10;
 int secondNum = 20;
 myNumber = secondNum * 3;
+myNumber = myNumber / 6;
