@@ -195,12 +195,17 @@ fn match_val_type(val_ident: &str) -> ValType {
 #[derive(Debug)]
 struct Local {
     pub name: String,
+    pub val_type: ValType,
     depth: u8,
 }
 
 impl Local {
-    fn new(name: String, depth: u8) -> Self {
-        Local { name, depth }
+    fn new(name: String, depth: u8, val_type: ValType) -> Self {
+        Local {
+            name,
+            depth,
+            val_type,
+        }
     }
 }
 
@@ -419,14 +424,18 @@ impl<'a> Compiler<'a> {
             if var_type != return_type {
                 panic!("cannot assign type {:?} to {:?}", var_type, return_type);
             }
-            let local = Local::new(String::from(name), self.scope_depth);
+            let local = Local::new(String::from(name), self.scope_depth, var_type);
             self.locals.push(local);
         }
     }
 
     fn assignment(&mut self, local_idx: usize) {
-        self.expression(None);
-        // TODO: match the type of the variable to the return type of the expression
+        let return_type: ValType = self.expression(None);
+        assert_eq!(
+            return_type, self.locals[local_idx].val_type,
+            "cannot set a variable of type {:?} to {:?}",
+            self.locals[local_idx].val_type, return_type
+        );
         self.emit_set_local(local_idx);
     }
 
