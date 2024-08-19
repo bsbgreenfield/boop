@@ -38,6 +38,8 @@ pub enum Token {
     TkSemicolon,
     TkOpenParen,
     TkCloseParen,
+    TkOpenBracket,
+    TkCloseBracket,
     TkTrue,
     TkFalse,
     TkFor,
@@ -163,7 +165,7 @@ impl<'a> Parser<'a> {
 
     fn skip_whitespace(&mut self) -> Option<char> {
         while let Some(char) = self.code_iter.next() {
-            if char == ' ' || char == 0xA as char {
+            if char::is_whitespace(char) {
                 // while searching for the next item, increment end and start
                 self.start += 1;
                 continue;
@@ -205,7 +207,7 @@ impl<'a> Parser<'a> {
             // save the current slice indices
             let start = self.start;
             let end = self.end;
-            self.peeked = Some(self.parse_next());
+            self.peeked = Some(self.next_token());
             // store the new slice indices in peeked_start/ peeked_end
             self.peeked_start = self.start;
             self.peeked_end = self.end;
@@ -218,6 +220,15 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_next(&mut self) -> Option<Token> {
+        let maybe_token = self.next_token();
+        match maybe_token {
+            Some(token) => println!("{:?}", token),
+            None => println!("EOF"),
+        }
+        return maybe_token;
+    }
+
+    fn next_token(&mut self) -> Option<Token> {
         use Token::*;
 
         let mut return_token: Option<Token> = None;
@@ -247,6 +258,8 @@ impl<'a> Parser<'a> {
                         '*' => Some(TkStar),
                         '/' => Some(TkSlash),
                         '(' => Some(TkOpenParen),
+                        '{' => Some(TkOpenBracket),
+                        '}' => Some(TkCloseBracket),
                         ')' => Some(TkCloseParen),
                         ';' => Some(TkSemicolon),
                         _ => self.try_parse_identifier(),
@@ -254,11 +267,6 @@ impl<'a> Parser<'a> {
                     return_token.insert(some_token?);
                 }
             }
-        }
-        if let Some(token) = return_token {
-            println!("parsed: {:?}", token);
-        } else {
-            println!("parsed: EOF");
         }
         return return_token;
     }

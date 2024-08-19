@@ -281,7 +281,7 @@ impl<'a> Compiler<'a> {
             TkAnd => OpAnd,
             TkOr => OpOr,
             TkFalse | TkTrue | TkEof | TkErr | TkFor | TkSemicolon | TkNum | TkCloseParen
-            | TkEquals | TkString | TkIdentifier | TkPrint => {
+            | TkEquals | TkString | TkIdentifier | TkPrint | TkOpenBracket | TkCloseBracket => {
                 panic!("Expected an operator token, got {:?}", token);
             }
         };
@@ -323,14 +323,75 @@ impl<'a> Compiler<'a> {
         self.code.push(Instruction::Operation(operation));
     }
 
+    pub fn compile(&mut self) {
+        loop {
+            if let Some(token) = self.parser.peek() {
+                match token {
+                    Token::TkOpenBracket => {
+                        self.block();
+                    }
+                    _ => {
+                        if !self.statement() {
+                            return;
+                        }
+                    }
+                };
+            } else {
+                return;
+            }
+        }
+    }
+
+    fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    fn end_scope(&mut self) {
+        let mut count = self.locals.len();
+        for local in self.locals.iter().rev() {
+            if local.depth < self.scope_depth {
+                break;
+            }
+            count -= 1;
+        }
+
+        for _ in 0..(self.locals.len() - count) {
+            // pop all the locals off the stack that no longer exist
+            self.emit_operation(Operations::OpPop);
+        }
+        self.locals.drain(count..); // remove the locals from the locals array
+        self.scope_depth -= 1; //return the scope
+    }
+
+    pub fn block(&mut self) {
+        self.parser.parse_next(); // consume the open bracket
+        self.begin_scope();
+        loop {
+            match self.parser.peek() {
+                Some(token) => match token {
+                    Token::TkCloseBracket => {
+                        self.parser.parse_next();
+                        self.end_scope();
+                        return; // block end, exit function
+                    }
+                    Token::TkOpenBracket => self.block(),
+                    _ => {
+                        if self.statement() {
+                            continue;
+                        } else {
+                            panic!("expected a '}}' to end the block");
+                        }
+                    }
+                },
+                None => panic!("didnt expect end of file..."),
+            }
+        }
+    }
+
     pub fn statement(&mut self) -> bool {
         if let Some(token) = self.parser.peek() {
             match token {
-                Token::TkNum
-                | Token::TkString
-                | Token::TkOpenParen
-                | Token::TkTrue
-                | Token::TkFalse => {
+                Token::TkNum | Token::TkString | Token::TkTrue | Token::TkFalse => {
                     self.expression_statement(None);
                 }
                 Token::TkFor => todo!(),
@@ -346,6 +407,9 @@ impl<'a> Compiler<'a> {
                 | Token::TkAnd
                 | Token::TkEquals
                 | Token::TkEof
+                | Token::TkOpenBracket
+                | Token::TkCloseBracket
+                | Token::TkOpenParen
                 | Token::TkCloseParen => {
                     panic!("expected a statement or expression");
                 }
@@ -374,8 +438,15 @@ impl<'a> Compiler<'a> {
 
     fn has_variable(&self, name: &str) -> Option<usize> {
         let mut idx: usize = self.locals.len();
+        let mut local_height = self.scope_depth;
         let local_reverse_iter = self.locals.iter().rev();
         for local in local_reverse_iter {
+            // if true, this variable is in a scope seperate and not inclusive of the current
+            // scope
+            if local.depth > local_height {
+                break;
+            }
+            local_height = local.depth;
             if local.name == name {
                 return Some(idx - 1);
             }
@@ -888,5 +959,33 @@ mod tests {
                 Instruction::from_operation(OpPrint)
             ]
         );
+    }
+
+    #[test]
+    #[should_panic]
+    fn wrong_type_dec() {
+        let code = String::from("String myString = 12;");
+        let mut compiler = Compiler::new(&code);
+        compiler.statement();
+    }
+
+    #[test]
+    #[should_panic]
+    fn wrong_type_assignment() {
+        let code = String::from("String myString = \"hello\"; myString = 12");
+        let mut compiler = Compiler::new(&code);
+        compiler.statement();
+        compiler.statement();
+    }
+
+    #[test]
+    #[should_panic]
+    fn wrong_type_assignment_2() {
+        let code =
+            String::from("String myString = \"hello\"; int myNumber = 12; myString = myNumber");
+        let mut compiler = Compiler::new(&code);
+        compiler.statement();
+        compiler.statement();
+        compiler.statement();
     }
 }

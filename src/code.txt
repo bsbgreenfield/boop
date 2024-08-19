@@ -1,4 +1,9 @@
-String benji = "benji"; 
-String camille = " camille"; 
-String both = benji + camille; 
-print both; 
+int thirdNum = 3;
+{
+	int fourthNum = 4;
+	{
+		int fifthNum = 5;
+		print fourthNum;
+	}
+}
+print thirdNum;

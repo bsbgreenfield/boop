@@ -2,7 +2,7 @@ use core::panic;
 use std::{path::Iter, rc::Rc, usize};
 
 use crate::{
-    compiler::{Compiler, Instruction, Operations},
+    compiler::{self, Compiler, Instruction, Operations},
     object::ObjString,
     value::{ValData, Value},
 };
@@ -28,11 +28,7 @@ impl<'a> Vm<'a> {
 
     pub fn run(&'a mut self) -> Result<(), RuntimeError> {
         use Operations::*;
-        loop {
-            if self.compiler.statement() == false {
-                break;
-            }
-        }
+        self.compiler.compile();
         let instructions = &mut self.compiler.code;
         let mut instr_iter = instructions.iter();
         loop {
@@ -116,7 +112,7 @@ impl<'a> Vm<'a> {
                         NoOp => todo!(),
                         OpGrouping => panic!("compiler error..."),
                         OpPop => {
-                            print!("OP_POP");
+                            print!("OP_POP|       ");
                             self.stack.pop();
                         }
                     },
