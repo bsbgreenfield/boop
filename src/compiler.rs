@@ -988,4 +988,30 @@ mod tests {
         compiler.statement();
         compiler.statement();
     }
+
+    #[test]
+    fn compile_a_block() {
+        let code = String::from("int one = 1; {String hello = \"hello\";} print one;");
+        let mut compiler = Compiler::new(&code);
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpPop), // pop off the hello
+                Instruction::from_operation(OpGetLocal),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpPrint),
+            ]
+        );
+
+        assert_eq!(
+            &compiler.constants,
+            &vec![Value::from_num(1), Value::from_string("hello")]
+        );
+    }
 }

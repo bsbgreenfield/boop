@@ -6,4 +6,4 @@ int thirdNum = 3;
 		print fourthNum;
 	}
 }
-print thirdNum;
+print (thirdNum + 4 * (3 + 2)) * 2;
