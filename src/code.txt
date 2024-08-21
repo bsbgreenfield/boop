@@ -1,5 +1,2 @@
-if (1 == 2) {
-	print "hello";
-} else {
-	print "world";
-}
+bool t = true;
+print t;

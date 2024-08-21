@@ -109,6 +109,22 @@ impl<'a> Vm<'a> {
                         }
                         OpAnd => todo!(),
                         OpOr => todo!(),
+                        OpLessThan => {
+                            let val_2 = self.stack.pop().unwrap().unwrap_int();
+                            let val_1 = self.stack.pop().unwrap().unwrap_int();
+                            self.stack.push(ValData::ValBool(val_1 < val_2));
+                        }
+                        OpGreaterThan => {
+                            let val_2 = self.stack.pop().unwrap().unwrap_int();
+                            let val_1 = self.stack.pop().unwrap().unwrap_int();
+                            self.stack.push(ValData::ValBool(val_1 > val_2));
+                        }
+                        OpEquals => {
+                            let val_2 = self.stack.pop().unwrap();
+                            let val_1 = self.stack.pop().unwrap();
+                            let does_equal = val_1.compare_value(&val_2);
+                            self.stack.push(ValData::ValBool(does_equal));
+                        }
                         NoOp => todo!(),
                         OpGrouping => panic!("compiler error..."),
                         OpPop => {

@@ -25,6 +25,9 @@ pub enum Operations {
     OpDivide,
     OpAnd,
     OpOr,
+    OpGreaterThan,
+    OpLessThan,
+    OpEquals,
     OpPop,
     NoOp,
     OpGrouping,
@@ -85,6 +88,9 @@ fn prec_of(operation: &Operations) -> Precedence {
         OpConstant => PrecPrimary,
         OpAnd => PrecAnd,
         OpOr => PrecOr,
+        OpGreaterThan => PrecComparison,
+        OpLessThan => PrecComparison,
+        OpEquals => PrecEquality,
         OpPop => PrecNone,
         NoOp => PrecNone,
         OpGrouping => PrecNone,
@@ -150,6 +156,18 @@ fn can_and_or_or(
     operand_type_stack: &mut Vec<ValType>,
 ) -> bool {
     if operand_1 == ValType::ValBoolType && operand_2 == ValType::ValBoolType {
+        push_type(ValType::ValBoolType, operand_type_stack);
+        return true;
+    }
+    return false;
+}
+
+fn can_compare(
+    operand_1: ValType,
+    operand_2: ValType,
+    operand_type_stack: &mut Vec<ValType>,
+) -> bool {
+    if operand_1 == operand_2 {
         push_type(ValType::ValBoolType, operand_type_stack);
         return true;
     }
@@ -242,7 +260,10 @@ impl<'a> Compiler<'a> {
                 {
                     value
                 } else {
-                    panic!("problem parsing value");
+                    panic!(
+                        "problem parsing value, parsed {:?}",
+                        self.parser.get_curr_slice()
+                    );
                 }
             }
             Token::TkTrue => Value::from_bool(true),
@@ -280,6 +301,9 @@ impl<'a> Compiler<'a> {
             TkOpenParen => OpGrouping,
             TkAnd => OpAnd,
             TkOr => OpOr,
+            TkLessThan => OpLessThan,
+            TkGreaterThan => OpLessThan,
+            TkDoubleEquals => OpEquals,
             _ => {
                 panic!("Expected an operator token, got {:?}", token);
             }
@@ -672,6 +696,15 @@ impl<'a> Compiler<'a> {
                                     panic!("Type mismatch: can only use 'and' and 'or' operators with booleans, found {:?}, and {:?}", operand_1, operand_2);
                                 }
                             }
+                            Operations::OpLessThan
+                            | Operations::OpGreaterThan
+                            | Operations::OpEquals => {
+                                if can_compare(operand_1, operand_2, operand_type_stack) {
+                                    self.emit_operation(operation);
+                                } else {
+                                    panic!("Type mismatch: can only use comparison operators with compatible types, found {:?}, and {:?}", operand_1, operand_2);
+                                }
+                            }
                             Operations::OpConstant
                             | Operations::OpPrint
                             | Operations::OpSetLocal
@@ -1037,6 +1070,83 @@ mod tests {
         assert_eq!(
             &compiler.constants,
             &vec![Value::from_num(1), Value::from_string("hello")]
+        );
+    }
+
+    #[test]
+    fn compare_numbers() {
+        let code = String::from("int one = 1; int two = 2; one == two; one < two;");
+        let mut compiler = Compiler::new(&code);
+
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpGetLocal),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpGetLocal),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpEquals),
+                Instruction::from_operation(OpPop),
+                Instruction::from_operation(OpGetLocal),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpGetLocal),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpLessThan),
+                Instruction::from_operation(OpPop),
+            ]
+        );
+    }
+
+    #[test]
+    fn compare_strings() {
+        let code = String::from("String one = \"hello\"; String two = \"world\"; one == two;");
+        let mut compiler = Compiler::new(&code);
+
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpGetLocal),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpGetLocal),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpEquals),
+                Instruction::from_operation(OpPop),
+            ]
+        );
+    }
+    #[test]
+    fn compare_booleans() {
+        let code = String::from("bool one = true; bool two = false; one == two;");
+        let mut compiler = Compiler::new(&code);
+
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpGetLocal),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpGetLocal),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpEquals),
+                Instruction::from_operation(OpPop),
+            ]
         );
     }
 }

@@ -129,9 +129,10 @@ impl<'a> Parser<'a> {
 
     fn match_keyword(&mut self, keyword: &str, offset: usize) -> Option<Token> {
         for i in offset..(keyword.len()) {
-            if Self::next_char(self) != keyword.chars().nth(i) {
+            if self.code_iter.peek() != keyword.chars().nth(i).as_ref() {
                 return None;
             }
+            self.next_char();
         }
         return KEYWORD_HASH.get(keyword).copied();
     }
@@ -231,7 +232,11 @@ impl<'a> Parser<'a> {
     pub fn parse_next(&mut self) -> Option<Token> {
         let maybe_token = self.next_token();
         match maybe_token {
-            Some(token) => println!("{:?}", token),
+            Some(token) => match token {
+                Token::TkIdentifier => println!("{:?}: {}", token, self.get_curr_slice()),
+                _ => println!("{:?}", token),
+            },
+
             None => println!("EOF"),
         }
         return maybe_token;
@@ -267,7 +272,7 @@ impl<'a> Parser<'a> {
                             if let Some(maybe_equals) = self.code_iter.peek() {
                                 match maybe_equals {
                                     '=' => {
-                                        self.code_iter.next();
+                                        self.next_char();
                                         return Some(TkDoubleEquals);
                                     }
                                     _ => Some(TkEquals),

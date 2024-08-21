@@ -57,6 +57,33 @@ impl ValData {
             },
         }
     }
+
+    pub fn compare_value(&self, other: &Self) -> bool {
+        match self {
+            ValData::ValNum(num) => *num == other.unwrap_int(),
+            ValData::ValBool(boolean) => *boolean == other.unwrap_bool(),
+            ValData::ValObj(obj) => Self::compare_objs(obj, other),
+        }
+    }
+
+    fn compare_objs(obj: &Rc<dyn Object>, other: &Self) -> bool {
+        match obj.get_type() {
+            crate::object::ObjType::ObjStringType => Self::compare_strings(obj.get_string(), other),
+            crate::object::ObjType::ObjBobjType => panic!("have implemented obj comparison yet"),
+        }
+    }
+
+    fn compare_strings(string_1: &str, other: &Self) -> bool {
+        match other {
+            ValData::ValObj(obj) => match obj.get_type() {
+                crate::object::ObjType::ObjStringType => {
+                    return string_1 == obj.get_string();
+                }
+                _ => panic!("Cannot compare a string with another object"),
+            },
+            _ => panic!("cannot compare a string with a num or a bool"),
+        }
+    }
 }
 
 impl Clone for ValData {
