@@ -280,8 +280,7 @@ impl<'a> Compiler<'a> {
             TkOpenParen => OpGrouping,
             TkAnd => OpAnd,
             TkOr => OpOr,
-            TkFalse | TkTrue | TkEof | TkErr | TkFor | TkSemicolon | TkNum | TkCloseParen
-            | TkEquals | TkString | TkIdentifier | TkPrint | TkOpenBracket | TkCloseBracket => {
+            _ => {
                 panic!("Expected an operator token, got {:?}", token);
             }
         };
@@ -397,6 +396,8 @@ impl<'a> Compiler<'a> {
                 Token::TkFor => todo!(),
                 Token::TkIdentifier => self.variable(),
                 Token::TkPrint => self.print_statement(),
+                Token::TkIf => self.if_statement(),
+                Token::TkElse => panic!("else statements must be preceded by an 'if' "),
                 Token::TkPlus
                 | Token::TkMinus
                 | Token::TkStar
@@ -406,6 +407,9 @@ impl<'a> Compiler<'a> {
                 | Token::TkOr
                 | Token::TkAnd
                 | Token::TkEquals
+                | Token::TkLessThan
+                | Token::TkGreaterThan
+                | Token::TkDoubleEquals
                 | Token::TkEof
                 | Token::TkOpenBracket
                 | Token::TkCloseBracket
@@ -427,6 +431,27 @@ impl<'a> Compiler<'a> {
             }
         } else {
             return false; // EOF no error
+        }
+    }
+
+    fn if_statement(&mut self) {
+        self.parser.parse_next(); // consume the 'if'
+        if match_token(self.parser.parse_next(), Token::TkOpenParen) {
+            if self.expression(None) == ValType::ValBoolType {
+                //TODO: emit skip if false
+                assert!(
+                    match_token(self.parser.peek(), Token::TkOpenBracket),
+                    "expected '{{' after the condition block in if statement"
+                );
+                self.block();
+                if match_token(self.parser.peek(), Token::TkElse) {
+                    self.block();
+                }
+            } else {
+                panic!("the condition inside of the condition block evaluate to a boolean");
+            }
+        } else {
+            panic!("expected a condition wrapped in parentheses | if (...boolean) |");
         }
     }
 

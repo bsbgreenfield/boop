@@ -20,6 +20,8 @@ fn generate_keyword_hash() -> HashMap<&'static str, Token> {
     result.insert("for", Token::TkFor);
     result.insert("and", Token::TkAnd);
     result.insert("or", Token::TkOr);
+    result.insert("if", Token::TkIf);
+    result.insert("else", Token::TkElse);
     result.insert("print", Token::TkPrint);
 
     result
@@ -31,6 +33,9 @@ static KEYWORD_HASH: LazyLock<HashMap<&str, Token>> = LazyLock::new(|| generate_
 pub enum Token {
     TkNum,
     TkEquals,
+    TkDoubleEquals,
+    TkGreaterThan,
+    TkLessThan,
     TkPlus,
     TkMinus,
     TkStar,
@@ -43,6 +48,8 @@ pub enum Token {
     TkTrue,
     TkFalse,
     TkFor,
+    TkIf,
+    TkElse,
     TkAnd,
     TkOr,
     TkString,
@@ -131,6 +138,7 @@ impl<'a> Parser<'a> {
 
     fn try_parse_keyword(&mut self, char: char) -> Option<Token> {
         match char {
+            'e' => return self.match_keyword("else", 1),
             't' => {
                 return self.match_keyword("true", 1);
             }
@@ -145,6 +153,7 @@ impl<'a> Parser<'a> {
             'a' => return self.match_keyword("and", 1),
             'o' => return self.match_keyword("or", 1),
             'p' => return self.match_keyword("print", 1),
+            'i' => return self.match_keyword("if", 1),
             _ => None,
         }
     }
@@ -254,7 +263,21 @@ impl<'a> Parser<'a> {
                         '+' => Some(TkPlus),
                         '-' => Some(TkMinus),
                         ';' => Some(TkSemicolon),
-                        '=' => Some(TkEquals),
+                        '=' => {
+                            if let Some(maybe_equals) = self.code_iter.peek() {
+                                match maybe_equals {
+                                    '=' => {
+                                        self.code_iter.next();
+                                        return Some(TkDoubleEquals);
+                                    }
+                                    _ => Some(TkEquals),
+                                }
+                            } else {
+                                return None;
+                            }
+                        }
+                        '>' => Some(TkGreaterThan),
+                        '<' => Some(TkLessThan),
                         '*' => Some(TkStar),
                         '/' => Some(TkSlash),
                         '(' => Some(TkOpenParen),

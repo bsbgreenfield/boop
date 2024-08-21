@@ -1,9 +1,5 @@
-int thirdNum = 3;
-{
-	int fourthNum = 4;
-	{
-		int fifthNum = 5;
-		print fourthNum;
-	}
+if (1 == 2) {
+	print "hello";
+} else {
+	print "world";
 }
-print (thirdNum + 4 * (3 + 2)) * 2;
