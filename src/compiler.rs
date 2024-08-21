@@ -29,6 +29,7 @@ pub enum Operations {
     OpLessThan,
     OpEquals,
     OpPop,
+    OpJumpIfFalse,
     NoOp,
     OpGrouping,
     OpGetLocal,
@@ -97,6 +98,7 @@ fn prec_of(operation: &Operations) -> Precedence {
         OpGetLocal => PrecPrimary,
         OpSetLocal => PrecAssignment,
         OpPrint => PrecNone,
+        OpJumpIfFalse => PrecNone,
     }
 }
 
@@ -316,6 +318,12 @@ impl<'a> Compiler<'a> {
         return Ok(idx.try_into().unwrap());
     }
 
+    fn emit_jump(&mut self, idx: u8) {
+        self.code
+            .push(Instruction::from_operation(Operations::OpJumpIfFalse));
+        self.code.push(Instruction::ConstantIdx(idx));
+    }
+
     fn emit_constant(&mut self, token: &Token) {
         let val: Value = self.token_to_val(token);
 
@@ -420,7 +428,10 @@ impl<'a> Compiler<'a> {
                 Token::TkFor => todo!(),
                 Token::TkIdentifier => self.variable(),
                 Token::TkPrint => self.print_statement(),
-                Token::TkIf => self.if_statement(),
+                Token::TkIf => {
+                    self.if_statement();
+                    return true;
+                }
                 Token::TkElse => panic!("else statements must be preceded by an 'if' "),
                 Token::TkPlus
                 | Token::TkMinus
@@ -461,16 +472,24 @@ impl<'a> Compiler<'a> {
     fn if_statement(&mut self) {
         self.parser.parse_next(); // consume the 'if'
         if match_token(self.parser.parse_next(), Token::TkOpenParen) {
-            if self.expression(None) == ValType::ValBoolType {
+            if self.expression(None, Token::TkCloseParen) == ValType::ValBoolType {
+                assert!(
+                    match_token(self.parser.parse_next(), Token::TkCloseParen),
+                    "expected a ')' after the condition"
+                );
                 //TODO: emit skip if false
                 assert!(
                     match_token(self.parser.peek(), Token::TkOpenBracket),
                     "expected '{{' after the condition block in if statement"
                 );
+                self.emit_jump(0);
+                // TODO: retroatively convert the number after the jump instruction to the index to
+                // jump to
                 self.block();
                 if match_token(self.parser.peek(), Token::TkElse) {
                     self.block();
                 }
+                self.emit_operation(Operations::OpPop);
             } else {
                 panic!("the condition inside of the condition block evaluate to a boolean");
             }
@@ -481,7 +500,7 @@ impl<'a> Compiler<'a> {
 
     fn print_statement(&mut self) {
         self.parser.parse_next(); // consume the print statement
-        self.expression(None);
+        self.expression(None, Token::TkSemicolon);
         self.emit_operation(Operations::OpPrint);
     }
 
@@ -540,7 +559,7 @@ impl<'a> Compiler<'a> {
             );
         }
         if match_token(self.parser.parse_next(), Token::TkEquals) {
-            let return_type = self.expression(None);
+            let return_type = self.expression(None, Token::TkSemicolon);
             if var_type != return_type {
                 panic!("cannot assign type {:?} to {:?}", var_type, return_type);
             }
@@ -550,7 +569,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn assignment(&mut self, local_idx: usize) {
-        let return_type: ValType = self.expression(None);
+        let return_type: ValType = self.expression(None, Token::TkSemicolon);
         assert_eq!(
             return_type, self.locals[local_idx].val_type,
             "cannot set a variable of type {:?} to {:?}",
@@ -560,11 +579,15 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn expression_statement(&mut self, maybe_parsed_operand: Option<&Token>) {
-        self.expression(maybe_parsed_operand);
+        self.expression(maybe_parsed_operand, Token::TkSemicolon);
         self.emit_operation(Operations::OpPop);
     }
 
-    pub fn expression(&mut self, maybe_parsed_operand: Option<&Token>) -> ValType {
+    pub fn expression(
+        &mut self,
+        maybe_parsed_operand: Option<&Token>,
+        expected_end_token: Token,
+    ) -> ValType {
         let mut operator_stack: Vec<Operations> = Vec::new();
         let mut operand_type_stack: Vec<ValType> = Vec::new();
         let mut operand_phase: bool = true;
@@ -583,14 +606,20 @@ impl<'a> Compiler<'a> {
                         }
                         continue;
                     } else if is_group_end(&token) {
-                        self.dump_stack(&mut operator_stack, &mut operand_type_stack);
-                        continue;
+                        if self.dump_stack(&mut operator_stack, &mut operand_type_stack) {
+                            continue;
+                        } else if match_token(self.parser.peek(), expected_end_token) {
+                            break;
+                        }
                     }
-                    // reroute to assignment
                     // compile constant
                     if operand_phase {
                         self.compile_operand(&token, &mut operand_type_stack);
                         operand_phase = false;
+                        if match_token(self.parser.peek(), expected_end_token) {
+                            self.dump_stack(&mut operator_stack, &mut operand_type_stack);
+                            break;
+                        }
                     }
                     // compile operator
                     else {
@@ -608,16 +637,6 @@ impl<'a> Compiler<'a> {
                             operator_stack.push(operator);
                         }
                         operand_phase = true;
-                    }
-                    // check for end of expression
-                    if let Some(maybe_semicolon) = self.parser.peek() {
-                        match maybe_semicolon {
-                            Token::TkSemicolon => {
-                                self.dump_stack(&mut operator_stack, &mut operand_type_stack);
-                                break;
-                            }
-                            _ => (),
-                        }
                     }
                 }
                 None => {
@@ -656,13 +675,13 @@ impl<'a> Compiler<'a> {
         &mut self,
         stack: &mut Vec<Operations>,
         operand_type_stack: &mut Vec<ValType>,
-    ) -> () {
+    ) -> bool {
         // dump until we hit a grouing operation, then pop that and exit
         while stack.len() > 0 {
             if let Some(operation) = stack.pop() {
                 match operation {
                     Operations::OpGrouping => {
-                        break;
+                        return true;
                     }
                     _ => {
                         let operand_1 = operand_type_stack.pop().unwrap();
@@ -711,12 +730,14 @@ impl<'a> Compiler<'a> {
                             | Operations::OpGetLocal
                             | Operations::NoOp
                             | Operations::OpGrouping
-                            | Operations::OpPop => (),
+                            | Operations::OpPop
+                            | Operations::OpJumpIfFalse => (),
                         }
                     }
                 }
             }
         }
+        return false;
     }
 }
 
@@ -729,7 +750,7 @@ mod tests {
     fn compile_a_single_number() {
         let code: &String = &String::from("123");
         let mut compiler: Compiler = Compiler::new(code);
-        compiler.expression(None);
+        compiler.expression(None, Token::TkSemicolon);
 
         assert_eq!(
             &compiler.code,
@@ -746,7 +767,7 @@ mod tests {
     fn compile_an_arithmatic_expression() {
         let code: &String = &String::from("1 + (2 * 3)");
         let mut compiler: Compiler = Compiler::new(code);
-        compiler.expression(None);
+        compiler.expression(None, Token::TkEof);
 
         assert_eq!(
             &compiler.code,
@@ -771,7 +792,7 @@ mod tests {
     fn compile_a_boolean() {
         let code: &String = &String::from("true");
         let mut compiler: Compiler = Compiler::new(code);
-        compiler.expression(None);
+        compiler.expression(None, Token::TkEof);
         assert_eq!(
             &compiler.code,
             &vec![
@@ -787,7 +808,7 @@ mod tests {
     fn compile_a_boolean_operation() {
         let code: &String = &String::from("true and (false or false) and true");
         let mut compiler: Compiler = Compiler::new(code);
-        compiler.expression(None);
+        compiler.expression(None, Token::TkEof);
         assert_eq!(
             &compiler.code,
             &vec![
@@ -821,7 +842,7 @@ mod tests {
     fn panic_adding_num_and_bool() {
         let code: &String = &String::from("1 + (true and true)");
         let mut compiler: Compiler = Compiler::new(code);
-        compiler.expression(None);
+        compiler.expression(None, Token::TkEof);
     }
 
     #[test]
@@ -829,7 +850,7 @@ mod tests {
     fn panic_multiplying_num_and_bool() {
         let code: &String = &String::from("1 * false + 2");
         let mut compiler: Compiler = Compiler::new(code);
-        compiler.expression(None);
+        compiler.expression(None, Token::TkEof);
     }
 
     #[test]
@@ -838,7 +859,7 @@ mod tests {
         my_string.push_str("hello");
         my_string.write_char('"').unwrap();
         let mut compiler: Compiler = Compiler::new(&my_string);
-        compiler.expression(None);
+        compiler.expression(None, Token::TkEof);
 
         assert_eq!(
             &compiler.code,
@@ -863,7 +884,7 @@ mod tests {
         my_string_1.push_str(&my_string_3);
         my_string_1.push_str(&my_string_2);
         let mut compiler: Compiler = Compiler::new(&my_string_1);
-        compiler.expression(None);
+        compiler.expression(None, Token::TkEof);
 
         assert_eq!(
             &compiler.code,

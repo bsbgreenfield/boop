@@ -99,13 +99,14 @@ impl<'a> Vm<'a> {
                                 Instruction::ConstantIdx(idx) => {
                                     let new_value = self.stack.pop().unwrap();
                                     self.stack[*idx as usize] = new_value;
-                                    println!("OP_SET_LOCAL: {}  |     ", idx);
+                                    print!("OP_SET_LOCAL: {}  |     ", idx);
                                 }
                                 _ => panic!("expected an idx of the local to set"),
                             }
                         }
                         OpPrint => {
                             self.stack.pop().unwrap().print_value();
+                            print!("OP_PRINT        |     ")
                         }
                         OpAnd => todo!(),
                         OpOr => todo!(),
@@ -124,6 +125,7 @@ impl<'a> Vm<'a> {
                             let val_1 = self.stack.pop().unwrap();
                             let does_equal = val_1.compare_value(&val_2);
                             self.stack.push(ValData::ValBool(does_equal));
+                            print!("OP_EQUALS       |     ")
                         }
                         NoOp => todo!(),
                         OpGrouping => panic!("compiler error..."),
@@ -131,6 +133,7 @@ impl<'a> Vm<'a> {
                             print!("OP_POP          |     ");
                             self.stack.pop();
                         }
+                        OpJumpIfFalse => print!("OP_JUMP_IF_FALSE|     "),
                     },
                     _ => panic!("expected an operation, got {:?}", current_instruction),
                 }
