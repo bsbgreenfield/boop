@@ -29,8 +29,10 @@ impl<'a> Vm<'a> {
     pub fn run(&'a mut self) -> Result<(), RuntimeError> {
         use Operations::*;
         self.compiler.compile();
+        debug_instructions(&self.compiler.code);
         let instructions = &mut self.compiler.code;
         let mut instr_iter = instructions.iter();
+        let mut curr_instr_idx = 0;
         loop {
             if let Some(current_instruction) = instr_iter.next() {
                 match current_instruction {
@@ -39,6 +41,7 @@ impl<'a> Vm<'a> {
                             if let Some(idx_instr) = instr_iter.next() {
                                 match idx_instr {
                                     Instruction::ConstantIdx(idx) => {
+                                        curr_instr_idx += 1;
                                         let val: ValData =
                                             self.compiler.constants[*idx as usize].data.clone();
                                         self.stack.push(val);
@@ -85,6 +88,7 @@ impl<'a> Vm<'a> {
                             if let Some(idx_instr) = instr_iter.next() {
                                 match idx_instr {
                                     Instruction::ConstantIdx(idx) => {
+                                        curr_instr_idx += 1;
                                         let local: ValData = self.stack[*idx as usize].clone();
                                         self.stack.push(local);
                                         print!("OP GET LOCAL: {} |     ", idx);
@@ -97,6 +101,7 @@ impl<'a> Vm<'a> {
                             let idx_instr = instr_iter.next().unwrap();
                             match idx_instr {
                                 Instruction::ConstantIdx(idx) => {
+                                    curr_instr_idx += 1;
                                     let new_value = self.stack.pop().unwrap();
                                     self.stack[*idx as usize] = new_value;
                                     print!("OP_SET_LOCAL: {}  |     ", idx);
@@ -133,7 +138,23 @@ impl<'a> Vm<'a> {
                             print!("OP_POP          |     ");
                             self.stack.pop();
                         }
-                        OpJumpIfFalse => print!("OP_JUMP_IF_FALSE|     "),
+                        OpJumpIfFalse => {
+                            if let Some(idx_instr) = instr_iter.next() {
+                                match idx_instr {
+                                    Instruction::ConstantIdx(idx) => {
+                                        curr_instr_idx += 1;
+                                        let condition = self.stack.pop().unwrap().unwrap_bool();
+                                        if !condition {
+                                            for _ in 0..(idx - curr_instr_idx - 1) {
+                                                instr_iter.next();
+                                            }
+                                        }
+                                        print!("OP_JUMP_IF_FALSE: {}|     ", idx);
+                                    }
+                                    _ => panic!("expected an idx"),
+                                }
+                            }
+                        }
                     },
                     _ => panic!("expected an operation, got {:?}", current_instruction),
                 }
@@ -141,9 +162,18 @@ impl<'a> Vm<'a> {
             } else {
                 break;
             }
+            curr_instr_idx += 1;
         }
         Ok(())
     }
+}
+
+fn debug_instructions(instructions: &Vec<Instruction>) {
+    println!("_______________________________");
+    for (idx, instruction) in instructions.iter().enumerate() {
+        println!("{}: {:?}", idx, instruction);
+    }
+    println!("_______________________________");
 }
 
 fn debug_print_vm(current_instruction: Instruction, stack: &Vec<ValData>) {

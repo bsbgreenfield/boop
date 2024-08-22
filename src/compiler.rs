@@ -4,6 +4,7 @@ use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
+use std::usize;
 use std::{collections::hash_map, mem};
 
 use crate::object::ObjString;
@@ -169,6 +170,7 @@ fn can_compare(
     operand_2: ValType,
     operand_type_stack: &mut Vec<ValType>,
 ) -> bool {
+    println!("comparing a {:?} to a {:?}", operand_1, operand_2);
     if operand_1 == operand_2 {
         push_type(ValType::ValBoolType, operand_type_stack);
         return true;
@@ -483,10 +485,14 @@ impl<'a> Compiler<'a> {
                     "expected '{{' after the condition block in if statement"
                 );
                 self.emit_jump(0);
+                let code_index_slot = self.code.len() - 1;
                 // TODO: retroatively convert the number after the jump instruction to the index to
                 // jump to
                 self.block();
+                self.code[code_index_slot] =
+                    Instruction::from_constant_idx((self.code.len()) as u8);
                 if match_token(self.parser.peek(), Token::TkElse) {
+                    self.parser.parse_next();
                     self.block();
                 }
                 self.emit_operation(Operations::OpPop);
@@ -565,6 +571,9 @@ impl<'a> Compiler<'a> {
             }
             let local = Local::new(String::from(name), self.scope_depth, var_type);
             self.locals.push(local);
+        } else {
+            panic!("expected an equals sign to declare the variable");
+            //TODO: allow uninitialized vars?
         }
     }
 
@@ -610,6 +619,8 @@ impl<'a> Compiler<'a> {
                             continue;
                         } else if match_token(self.parser.peek(), expected_end_token) {
                             break;
+                        } else {
+                            panic!("unmatched closing parentheses");
                         }
                     }
                     // compile constant
@@ -664,11 +675,12 @@ impl<'a> Compiler<'a> {
             let ident = self.parser.get_curr_slice();
             let idx = self.has_variable(ident).unwrap();
             self.emit_get_local(idx);
+            push_type(self.locals[idx].val_type, operand_type_stack);
         } else {
             self.emit_constant(token);
+            let new_val_ref = self.constants.last().unwrap();
+            push_type_of_val(new_val_ref, operand_type_stack);
         }
-        let new_val_ref = self.constants.last().unwrap();
-        push_type_of_val(new_val_ref, operand_type_stack);
     }
 
     fn dump_stack(
@@ -1169,5 +1181,67 @@ mod tests {
                 Instruction::from_operation(OpPop),
             ]
         );
+    }
+
+    #[test]
+    #[should_panic]
+    fn compare_different_types() {
+        let code = String::from("bool t = true; int one = 1; t == one;");
+        let mut compiler = Compiler::new(&code);
+
+        compiler.compile();
+    }
+
+    #[test]
+    fn compile_if_statement() {
+        let code = String::from("if (1 == 2){ print \"hello\"; }");
+        let mut compiler = Compiler::new(&code);
+
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpEquals),
+                Instruction::from_operation(OpJumpIfFalse),
+                Instruction::from_constant_idx(10),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(2),
+                Instruction::from_operation(OpPrint),
+                Instruction::from_operation(OpPop),
+            ]
+        )
+    }
+
+    #[test]
+    fn compile_if_else_statement() {
+        let code = String::from("if (1 == 2){ print \"hello\"; } else {print 1;}");
+        let mut compiler = Compiler::new(&code);
+
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpEquals),
+                Instruction::from_operation(OpJumpIfFalse),
+                Instruction::from_constant_idx(10),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(2),
+                Instruction::from_operation(OpPrint),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(3),
+                Instruction::from_operation(OpPrint),
+                Instruction::from_operation(OpPop),
+            ]
+        )
     }
 }
