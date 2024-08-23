@@ -28,6 +28,7 @@ pub enum Operations {
     OpOr,
     OpGreaterThan,
     OpLessThan,
+    OpJump,
     OpEquals,
     OpPop,
     OpJumpIfFalse,
@@ -99,6 +100,7 @@ fn prec_of(operation: &Operations) -> Precedence {
         OpGetLocal => PrecPrimary,
         OpSetLocal => PrecAssignment,
         OpPrint => PrecNone,
+        OpJump => PrecNone,
         OpJumpIfFalse => PrecNone,
     }
 }
@@ -320,9 +322,15 @@ impl<'a> Compiler<'a> {
         return Ok(idx.try_into().unwrap());
     }
 
-    fn emit_jump(&mut self, idx: u8) {
+    fn emit_jif(&mut self, idx: u8) {
         self.code
             .push(Instruction::from_operation(Operations::OpJumpIfFalse));
+        self.code.push(Instruction::ConstantIdx(idx));
+    }
+
+    fn emit_jump(&mut self, idx: u8) {
+        self.code
+            .push(Instruction::from_operation(Operations::OpJump));
         self.code.push(Instruction::ConstantIdx(idx));
     }
 
@@ -397,11 +405,14 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn block(&mut self) {
-        self.parser.parse_next(); // consume the open bracket
+        // consume the open bracket
+        if !match_token(self.parser.parse_next(), Token::TkOpenBracket) {
+            panic!("Expected '{{' at the beginning of a block");
+        }
         self.begin_scope();
         loop {
-            match self.parser.peek() {
-                Some(token) => match token {
+            if let Some(token) = self.parser.peek() {
+                match token {
                     Token::TkCloseBracket => {
                         self.parser.parse_next();
                         self.end_scope();
@@ -411,14 +422,60 @@ impl<'a> Compiler<'a> {
                     _ => {
                         if self.statement() {
                             continue;
-                        } else {
-                            panic!("expected a '}}' to end the block");
                         }
+                        panic!("expected a '}}' to end the block");
                     }
-                },
-                None => panic!("didnt expect end of file..."),
+                }
+            } else {
+                panic!("unexpected EOF before block close");
             }
         }
+    }
+
+    fn loop_block(&mut self) {
+        if !match_token(self.parser.parse_next(), Token::TkOpenBracket) {
+            panic!("Expected '{{' at the beginning of a block");
+        }
+        let loop_start = self.code.len();
+        self.begin_scope();
+
+        let mut break_at: i32 = -1;
+        loop {
+            if let Some(token) = self.parser.peek() {
+                match token {
+                    //TODO: make a new instruction for instr idx instead of constant idx
+                    Token::TkBreak => {
+                        self.parser.parse_next(); // consume the 'break'
+                        assert!(match_token(self.parser.parse_next(), Token::TkSemicolon)); // consume
+                                                                                            // the semicolon
+                        break_at = (self.code.len()) as i32;
+                        self.emit_jump(99);
+                    }
+                    Token::TkContinue => {
+                        self.emit_jump(loop_start as u8);
+                    }
+                    Token::TkOpenBracket => self.block(),
+                    Token::TkCloseBracket => {
+                        self.parser.parse_next();
+                        self.end_scope();
+                        break;
+                    }
+                    _ => {
+                        if self.statement() {
+                            continue;
+                        }
+                        panic!("expected a '}}' to end the loop");
+                    }
+                }
+            }
+        }
+        if break_at == -1 {
+            panic!("this loop needs a break statement somewhere to avoid an infinite loop");
+        } else {
+            self.code[break_at as usize] =
+                Instruction::from_constant_idx((self.code.len() - 1) as u8);
+        }
+        self.emit_jump(loop_start as u8);
     }
 
     pub fn statement(&mut self) -> bool {
@@ -430,9 +487,18 @@ impl<'a> Compiler<'a> {
                 Token::TkFor => todo!(),
                 Token::TkIdentifier => self.variable(),
                 Token::TkPrint => self.print_statement(),
+                // statements that dont require semicolons at the end
                 Token::TkIf => {
                     self.if_statement();
                     return true;
+                }
+                Token::TkLoop => {
+                    self.loop_statement();
+                    return true;
+                }
+
+                Token::TkBreak | Token::TkContinue => {
+                    panic!("'break' and 'continue' can only be used within loops")
                 }
                 Token::TkElse => panic!("else statements must be preceded by an 'if' "),
                 Token::TkPlus
@@ -471,6 +537,19 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn loop_statement(&mut self) {
+        self.parser.parse_next(); // consume the 'loop' word
+        if match_token(self.parser.peek(), Token::TkFor) {
+            self.loop_for_statement();
+            return;
+        }
+        self.loop_block();
+    }
+
+    fn loop_for_statement(&mut self) {
+        self.parser.parse_next(); // consume the 'for'
+    }
+
     fn if_statement(&mut self) {
         self.parser.parse_next(); // consume the 'if'
         if match_token(self.parser.parse_next(), Token::TkOpenParen) {
@@ -484,7 +563,7 @@ impl<'a> Compiler<'a> {
                     match_token(self.parser.peek(), Token::TkOpenBracket),
                     "expected '{{' after the condition block in if statement"
                 );
-                self.emit_jump(0);
+                self.emit_jif(0);
                 let code_index_slot = self.code.len() - 1;
                 // TODO: retroatively convert the number after the jump instruction to the index to
                 // jump to
@@ -743,6 +822,7 @@ impl<'a> Compiler<'a> {
                             | Operations::NoOp
                             | Operations::OpGrouping
                             | Operations::OpPop
+                            | Operations::OpJump
                             | Operations::OpJumpIfFalse => (),
                         }
                     }

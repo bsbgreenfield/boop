@@ -23,6 +23,9 @@ fn generate_keyword_hash() -> HashMap<&'static str, Token> {
     result.insert("if", Token::TkIf);
     result.insert("else", Token::TkElse);
     result.insert("print", Token::TkPrint);
+    result.insert("loop", Token::TkLoop);
+    result.insert("break", Token::TkBreak);
+    result.insert("continue", Token::TkContinue);
 
     result
 }
@@ -48,6 +51,9 @@ pub enum Token {
     TkTrue,
     TkFalse,
     TkFor,
+    TkLoop,
+    TkBreak,
+    TkContinue,
     TkIf,
     TkElse,
     TkAnd,
@@ -152,9 +158,12 @@ impl<'a> Parser<'a> {
                 None => None,
             },
             'a' => return self.match_keyword("and", 1),
+            'b' => return self.match_keyword("break", 1),
+            'c' => return self.match_keyword("continue", 1),
             'o' => return self.match_keyword("or", 1),
             'p' => return self.match_keyword("print", 1),
             'i' => return self.match_keyword("if", 1),
+            'l' => return self.match_keyword("loop", 1),
             _ => None,
         }
     }

@@ -1,4 +1,4 @@
-1 + 1;
-bool t = true;
-int one = 1;
-t == one;
+int i = 10;
+String hello = "hello";
+print 10 + i;
+print hello;

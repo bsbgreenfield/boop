@@ -1,5 +1,5 @@
 use core::panic;
-use std::{path::Iter, rc::Rc, usize};
+use std::{rc::Rc, usize};
 
 use crate::{
     compiler::{self, Compiler, Instruction, Operations},
@@ -38,18 +38,11 @@ impl<'a> Vm<'a> {
                 match current_instruction {
                     Instruction::Operation(op) => match op {
                         Operations::OpConstant => {
-                            if let Some(idx_instr) = instr_iter.next() {
-                                match idx_instr {
-                                    Instruction::ConstantIdx(idx) => {
-                                        curr_instr_idx += 1;
-                                        let val: ValData =
-                                            self.compiler.constants[*idx as usize].data.clone();
-                                        self.stack.push(val);
-                                        print!("OP CONSTANT: {:?}  |     ", &idx);
-                                    }
-                                    _ => panic!("expected an idx"),
-                                }
-                            }
+                            let idx =
+                                Self::interpret_constant_idx(&mut instr_iter, &mut curr_instr_idx);
+                            let val: ValData = self.compiler.constants[idx as usize].data.clone();
+                            self.stack.push(val);
+                            print!("OP CONSTANT: {:?}  |     ", &idx);
                         }
                         OpAdd => {
                             let second_num = self.stack.pop().unwrap().unwrap_int();
@@ -85,17 +78,11 @@ impl<'a> Vm<'a> {
                             print!("OP CONCAT      |     ");
                         }
                         OpGetLocal => {
-                            if let Some(idx_instr) = instr_iter.next() {
-                                match idx_instr {
-                                    Instruction::ConstantIdx(idx) => {
-                                        curr_instr_idx += 1;
-                                        let local: ValData = self.stack[*idx as usize].clone();
-                                        self.stack.push(local);
-                                        print!("OP GET LOCAL: {} |     ", idx);
-                                    }
-                                    _ => (),
-                                }
-                            }
+                            let idx =
+                                Self::interpret_constant_idx(&mut instr_iter, &mut curr_instr_idx);
+                            let local: ValData = self.stack[idx as usize].clone();
+                            self.stack.push(local);
+                            print!("OP GET LOCAL: {} |     ", idx);
                         }
                         OpSetLocal => {
                             let idx_instr = instr_iter.next().unwrap();
@@ -139,21 +126,20 @@ impl<'a> Vm<'a> {
                             self.stack.pop();
                         }
                         OpJumpIfFalse => {
-                            if let Some(idx_instr) = instr_iter.next() {
-                                match idx_instr {
-                                    Instruction::ConstantIdx(idx) => {
-                                        curr_instr_idx += 1;
-                                        let condition = self.stack.pop().unwrap().unwrap_bool();
-                                        if !condition {
-                                            for _ in 0..(idx - curr_instr_idx - 1) {
-                                                instr_iter.next();
-                                            }
-                                        }
-                                        print!("OP_JUMP_IF_FALSE: {}|     ", idx);
-                                    }
-                                    _ => panic!("expected an idx"),
+                            let idx =
+                                Self::interpret_constant_idx(&mut instr_iter, &mut curr_instr_idx);
+
+                            let condition = self.stack.pop().unwrap().unwrap_bool();
+                            if !condition {
+                                for _ in 0..(idx - curr_instr_idx - 1) {
+                                    instr_iter.next();
                                 }
                             }
+                            print!("OP_JUMP_IF_FALSE: {}|     ", idx);
+                        }
+                        OpJump => {
+                            let idx =
+                                Self::interpret_constant_idx(&mut instr_iter, &mut curr_instr_idx);
                         }
                     },
                     _ => panic!("expected an operation, got {:?}", current_instruction),
@@ -165,6 +151,21 @@ impl<'a> Vm<'a> {
             curr_instr_idx += 1;
         }
         Ok(())
+    }
+
+    fn interpret_constant_idx<I>(instr_iter: &mut I, curr_instr_idx: &mut u8) -> u8
+    where
+        I: Iterator<Item = &'a compiler::Instruction>,
+    {
+        if let Some(idx_instr) = instr_iter.next() {
+            *curr_instr_idx += 1;
+            match idx_instr {
+                Instruction::ConstantIdx(idx) => return *idx,
+                _ => panic!("expected a constant idx, got {:?}", idx_instr),
+            }
+        } else {
+            panic!("expected a constant idx");
+        }
     }
 }
 
