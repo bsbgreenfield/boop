@@ -110,7 +110,7 @@ impl<'a> Parser<'a> {
             '0' => {
                 if let Some(next_char) = self.code_iter.peek() {
                     match next_char {
-                        ' ' => Some(0),
+                        ' ' | ';' => Some(0),
                         '0'..='9' => panic!("remove the leading 0 in the number"),
                         _ => panic!("unexpected token {}", next_char),
                     }

@@ -1,4 +1,10 @@
-int i = 10;
-String hello = "hello";
-print 10 + i;
-print hello;
+int idx = 0;
+loop {
+	if (idx == 3) {
+		break;
+	} else {
+		print "looping";
+		idx = idx + 1;
+	}
+}
+print "done";

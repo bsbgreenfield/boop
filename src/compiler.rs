@@ -31,6 +31,8 @@ pub enum Operations {
     OpJump,
     OpEquals,
     OpPop,
+    OpLoop,
+    OpBreak,
     OpJumpIfFalse,
     NoOp,
     OpGrouping,
@@ -58,6 +60,7 @@ enum Precedence {
 pub enum Instruction {
     Operation(Operations),
     ConstantIdx(u8),
+    InstructionIdx(usize),
 }
 
 impl Instruction {
@@ -68,6 +71,9 @@ impl Instruction {
     pub fn from_constant_idx(idx: u8) -> Self {
         Instruction::ConstantIdx(idx)
     }
+    pub fn from_instruction_idx(idx: usize) -> Self {
+        Instruction::InstructionIdx(idx)
+    }
 }
 
 impl fmt::Debug for Instruction {
@@ -75,6 +81,7 @@ impl fmt::Debug for Instruction {
         match self {
             Instruction::Operation(op) => write!(f, "Operation({:?})", op),
             Instruction::ConstantIdx(idx) => write!(f, "ConstantIdx({})", idx),
+            Instruction::InstructionIdx(idx) => write!(f, "InstructionIdx({})", idx),
         }
     }
 }
@@ -102,6 +109,8 @@ fn prec_of(operation: &Operations) -> Precedence {
         OpPrint => PrecNone,
         OpJump => PrecNone,
         OpJumpIfFalse => PrecNone,
+        OpLoop => PrecNone,
+        OpBreak => PrecNone,
     }
 }
 
@@ -178,18 +187,6 @@ fn can_compare(
         return true;
     }
     return false;
-}
-
-fn debug_print_expression(compiler: &Compiler) {
-    for instruction in &compiler.code {
-        match instruction {
-            Instruction::Operation(op) => match op {
-                Operations::OpConstant => print!("{:?}: ", op),
-                _ => println!("{:?}", op),
-            },
-            Instruction::ConstantIdx(idx) => println!("{:?}", idx),
-        };
-    }
 }
 
 fn push_type_of_val(val: &Value, operand_type_stack: &mut Vec<ValType>) {
@@ -322,16 +319,22 @@ impl<'a> Compiler<'a> {
         return Ok(idx.try_into().unwrap());
     }
 
-    fn emit_jif(&mut self, idx: u8) {
+    fn emit_jif(&mut self, idx: usize) {
         self.code
             .push(Instruction::from_operation(Operations::OpJumpIfFalse));
-        self.code.push(Instruction::ConstantIdx(idx));
+        self.code.push(Instruction::from_instruction_idx(idx));
     }
 
-    fn emit_jump(&mut self, idx: u8) {
+    fn emit_jump(&mut self, idx: usize) {
         self.code
             .push(Instruction::from_operation(Operations::OpJump));
-        self.code.push(Instruction::ConstantIdx(idx));
+        self.code.push(Instruction::from_instruction_idx(idx));
+    }
+
+    fn emit_loop(&mut self, idx: usize) {
+        self.code
+            .push(Instruction::from_operation(Operations::OpLoop));
+        self.code.push(Instruction::from_instruction_idx(idx));
     }
 
     fn emit_constant(&mut self, token: &Token) {
@@ -373,11 +376,13 @@ impl<'a> Compiler<'a> {
                     }
                     _ => {
                         if !self.statement() {
+                            println!("locals!!!!!!!!!!: {:?}", self.locals);
                             return;
                         }
                     }
                 };
             } else {
+                println!("locals!!!!!!!!!!: {:?}", self.locals);
                 return;
             }
         }
@@ -436,28 +441,16 @@ impl<'a> Compiler<'a> {
         if !match_token(self.parser.parse_next(), Token::TkOpenBracket) {
             panic!("Expected '{{' at the beginning of a block");
         }
-        let loop_start = self.code.len();
+        let loop_start = self.code.len() + 1;
         self.begin_scope();
-
-        let mut break_at: i32 = -1;
+        self.emit_loop(0);
         loop {
             if let Some(token) = self.parser.peek() {
                 match token {
                     //TODO: make a new instruction for instr idx instead of constant idx
-                    Token::TkBreak => {
-                        self.parser.parse_next(); // consume the 'break'
-                        assert!(match_token(self.parser.parse_next(), Token::TkSemicolon)); // consume
-                                                                                            // the semicolon
-                        break_at = (self.code.len()) as i32;
-                        self.emit_jump(99);
-                    }
-                    Token::TkContinue => {
-                        self.emit_jump(loop_start as u8);
-                    }
                     Token::TkOpenBracket => self.block(),
                     Token::TkCloseBracket => {
                         self.parser.parse_next();
-                        self.end_scope();
                         break;
                     }
                     _ => {
@@ -469,13 +462,9 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
-        if break_at == -1 {
-            panic!("this loop needs a break statement somewhere to avoid an infinite loop");
-        } else {
-            self.code[break_at as usize] =
-                Instruction::from_constant_idx((self.code.len() - 1) as u8);
-        }
-        self.emit_jump(loop_start as u8);
+        self.code[loop_start] = Instruction::from_instruction_idx(self.code.len() + 2);
+        self.emit_jump(loop_start);
+        self.end_scope();
     }
 
     pub fn statement(&mut self) -> bool {
@@ -497,9 +486,14 @@ impl<'a> Compiler<'a> {
                     return true;
                 }
 
-                Token::TkBreak | Token::TkContinue => {
-                    panic!("'break' and 'continue' can only be used within loops")
+                Token::TkBreak => {
+                    self.parser.parse_next();
+                    self.parser.parse_next();
+                    self.emit_operation(Operations::OpBreak);
+                    return true;
                 }
+
+                Token::TkContinue => todo!(),
                 Token::TkElse => panic!("else statements must be preceded by an 'if' "),
                 Token::TkPlus
                 | Token::TkMinus
@@ -558,23 +552,22 @@ impl<'a> Compiler<'a> {
                     match_token(self.parser.parse_next(), Token::TkCloseParen),
                     "expected a ')' after the condition"
                 );
-                //TODO: emit skip if false
                 assert!(
                     match_token(self.parser.peek(), Token::TkOpenBracket),
                     "expected '{{' after the condition block in if statement"
                 );
                 self.emit_jif(0);
-                let code_index_slot = self.code.len() - 1;
-                // TODO: retroatively convert the number after the jump instruction to the index to
-                // jump to
+                let index_of_if = self.code.len() - 1;
                 self.block();
-                self.code[code_index_slot] =
-                    Instruction::from_constant_idx((self.code.len()) as u8);
+                self.code[index_of_if] = Instruction::from_instruction_idx(self.code.len() + 2);
+                let index_of_else = self.code.len() - 1;
+                self.emit_jump(0); // jump to the end of the else statement
                 if match_token(self.parser.peek(), Token::TkElse) {
                     self.parser.parse_next();
                     self.block();
+                    self.code[index_of_else + 2] =
+                        Instruction::from_instruction_idx(self.code.len());
                 }
-                self.emit_operation(Operations::OpPop);
             } else {
                 panic!("the condition inside of the condition block evaluate to a boolean");
             }
@@ -823,6 +816,8 @@ impl<'a> Compiler<'a> {
                             | Operations::OpGrouping
                             | Operations::OpPop
                             | Operations::OpJump
+                            | Operations::OpLoop
+                            | Operations::OpBreak
                             | Operations::OpJumpIfFalse => (),
                         }
                     }
