@@ -33,6 +33,7 @@ pub enum Operations {
     OpPop,
     OpLoop,
     OpBreak,
+    OpContinue,
     OpJumpIfFalse,
     NoOp,
     OpGrouping,
@@ -111,6 +112,7 @@ fn prec_of(operation: &Operations) -> Precedence {
         OpJumpIfFalse => PrecNone,
         OpLoop => PrecNone,
         OpBreak => PrecNone,
+        OpContinue => PrecNone,
     }
 }
 
@@ -493,7 +495,12 @@ impl<'a> Compiler<'a> {
                     return true;
                 }
 
-                Token::TkContinue => todo!(),
+                Token::TkContinue => {
+                    self.parser.parse_next();
+                    self.parser.parse_next();
+                    self.emit_operation(Operations::OpContinue);
+                    return true;
+                }
                 Token::TkElse => panic!("else statements must be preceded by an 'if' "),
                 Token::TkPlus
                 | Token::TkMinus
@@ -818,6 +825,7 @@ impl<'a> Compiler<'a> {
                             | Operations::OpJump
                             | Operations::OpLoop
                             | Operations::OpBreak
+                            | Operations::OpContinue
                             | Operations::OpJumpIfFalse => (),
                         }
                     }

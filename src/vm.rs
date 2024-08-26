@@ -31,7 +31,7 @@ impl<'a> Vm<'a> {
         self.compiler.compile();
         debug_instructions(&self.compiler.code);
         let instructions = &mut self.compiler.code;
-        let mut breakpoints: Vec<usize> = Vec::new();
+        let mut breakpoints: Vec<(usize, usize)> = Vec::new();
         let mut idx = 0;
         loop {
             if idx > instructions.len() - 1 {
@@ -136,15 +136,25 @@ impl<'a> Vm<'a> {
                     }
                     OpLoop => {
                         let instruction_idx = get_instruction_idx(&mut idx, instructions);
-                        breakpoints.push(instruction_idx - 1);
+                        breakpoints.push((idx, instruction_idx - 1));
                         print!("OP_LOOP: {}    |     ", instruction_idx);
                     }
                     OpBreak => {
-                        if let Some(new_idx) = breakpoints.pop() {
+                        if let Some(loop_breakpoint) = breakpoints.pop() {
+                            let new_idx = loop_breakpoint.1;
                             print!("OP_BREAK     |    ");
                             idx = new_idx;
                         } else {
                             panic!("break called outside of a loop");
+                        }
+                    }
+                    OpContinue => {
+                        if let Some(loop_breakpoint) = &breakpoints.last() {
+                            let loop_start = loop_breakpoint.0;
+                            print!("OP_CONTINUE   |     ");
+                            idx = loop_start;
+                        } else {
+                            panic!("continue called outside of loop");
                         }
                     }
                 },
