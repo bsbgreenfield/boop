@@ -33,6 +33,7 @@ pub enum Operations {
     OpPop,
     OpLoop,
     OpBreak,
+    OpLoopFor,
     OpContinue,
     OpJumpIfFalse,
     NoOp,
@@ -113,6 +114,7 @@ fn prec_of(operation: &Operations) -> Precedence {
         OpLoop => PrecNone,
         OpBreak => PrecNone,
         OpContinue => PrecNone,
+        OpLoopFor => PrecNone,
     }
 }
 
@@ -439,7 +441,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn loop_block(&mut self) {
+    fn loop_block(&mut self) -> usize {
         if !match_token(self.parser.parse_next(), Token::TkOpenBracket) {
             panic!("Expected '{{' at the beginning of a block");
         }
@@ -465,8 +467,8 @@ impl<'a> Compiler<'a> {
             }
         }
         self.code[loop_start] = Instruction::from_instruction_idx(self.code.len() + 2);
-        self.emit_jump(loop_start);
         self.end_scope();
+        return loop_start;
     }
 
     pub fn statement(&mut self) -> bool {
@@ -542,13 +544,20 @@ impl<'a> Compiler<'a> {
         self.parser.parse_next(); // consume the 'loop' word
         if match_token(self.parser.peek(), Token::TkFor) {
             self.loop_for_statement();
-            return;
+            self.loop_block();
+        } else {
+            let loop_start = self.loop_block();
+            self.emit_jump(loop_start);
         }
-        self.loop_block();
     }
 
     fn loop_for_statement(&mut self) {
         self.parser.parse_next(); // consume the 'for'
+        let loop_count = self.expression(None, Token::TkOpenBracket); // int count left on stack
+        if loop_count != ValType::ValNumType {
+            panic!("loop for count must be an integer");
+        }
+        self.emit_operation(Operations::OpLoopFor);
     }
 
     fn if_statement(&mut self) {
@@ -824,6 +833,7 @@ impl<'a> Compiler<'a> {
                             | Operations::OpPop
                             | Operations::OpJump
                             | Operations::OpLoop
+                            | Operations::OpLoopFor
                             | Operations::OpBreak
                             | Operations::OpContinue
                             | Operations::OpJumpIfFalse => (),

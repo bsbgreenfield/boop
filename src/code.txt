@@ -1,14 +1,13 @@
-int idx = 0;
+int num = 0;
 loop {
-	if (idx == 3) {
+	if (num == 2) {
 		break;
-	} else {
-		print "looping";
-		idx = idx + 1;
 	}
-	if (idx == 2) {
-		continue;
-	} 
-	print idx;
+	loop for 2 {
+		print "inner";
+		break;
+	}
+	num = num  + 1;
 }
+
 print "done";
