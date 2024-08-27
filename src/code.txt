@@ -1,13 +1,5 @@
-int num = 0;
-loop {
-	if (num == 2) {
-		break;
-	}
-	loop for 2 {
-		print "inner";
-		break;
-	}
-	num = num  + 1;
+loop for 5 {
+	print "hi camille";
 }
 
-print "done";
+print "done looping";

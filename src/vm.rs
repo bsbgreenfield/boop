@@ -51,31 +51,31 @@ impl<'a> Vm<'a> {
                         let constant_idx = get_constant_idx(&mut idx, instructions);
                         let val: ValData = constants[constant_idx as usize].data.clone();
                         stack.push(val);
-                        print!("OP CONSTANT: {:?}  |     ", &constant_idx);
+                        //print!("OP CONSTANT: {:?}  |     ", &constant_idx);
                     }
                     OpAdd => {
                         let second_num = stack.pop().unwrap().unwrap_int();
                         let first_num = stack.pop().unwrap().unwrap_int();
                         stack.push(ValData::ValNum(first_num + second_num));
-                        print!("OP ADD          |     ");
+                        //print!("OP ADD          |     ");
                     }
                     OpSubtract => {
                         let second_num = stack.pop().unwrap().unwrap_int();
                         let first_num = stack.pop().unwrap().unwrap_int();
                         stack.push(ValData::ValNum(first_num - second_num));
-                        print!("OP SUBTRACT      |     ");
+                        //print!("OP SUBTRACT      |     ");
                     }
                     OpMultiply => {
                         let second_num = stack.pop().unwrap().unwrap_int();
                         let first_num = stack.pop().unwrap().unwrap_int();
                         stack.push(ValData::ValNum(first_num * second_num));
-                        print!("OP MULTIPLY     |     ");
+                        //print!("OP MULTIPLY     |     ");
                     }
                     OpDivide => {
                         let second_num = stack.pop().unwrap().unwrap_int();
                         let first_num = stack.pop().unwrap().unwrap_int();
                         stack.push(ValData::ValNum(first_num / second_num));
-                        print!("OP DIVIDE       |     ");
+                        //print!("OP DIVIDE       |     ");
                     }
                     OpConcat => {
                         let first_string = stack.pop().unwrap();
@@ -83,23 +83,23 @@ impl<'a> Vm<'a> {
                         let mut concat = String::from(second_string.unwrap_str());
                         concat.push_str(first_string.unwrap_str());
                         stack.push(ValData::ValObj(Rc::new(ObjString::new_from_heap(concat))));
-                        print!("OP CONCAT      |     ");
+                        //print!("OP CONCAT      |     ");
                     }
                     OpGetLocal => {
                         let constant_idx = get_constant_idx(&mut idx, instructions);
                         let local: ValData = stack[constant_idx as usize].clone();
                         stack.push(local);
-                        print!("OP GET LOCAL: {} |     ", constant_idx);
+                        //print!("OP GET LOCAL: {} |     ", constant_idx);
                     }
                     OpSetLocal => {
                         let constant_idx = get_constant_idx(&mut idx, instructions);
                         let new_value = stack.pop().unwrap();
                         stack[constant_idx as usize] = new_value;
-                        print!("OP_SET_LOCAL: {}  |     ", constant_idx);
+                        //print!("OP_SET_LOCAL: {}  |     ", constant_idx);
                     }
                     OpPrint => {
                         stack.pop().unwrap().print_value();
-                        print!("OP_PRINT        |     ")
+                        //print!("OP_PRINT        |     ")
                     }
                     OpAnd => todo!(),
                     OpOr => todo!(),
@@ -118,12 +118,12 @@ impl<'a> Vm<'a> {
                         let val_1 = stack.pop().unwrap();
                         let does_equal = val_1.compare_value(&val_2);
                         stack.push(ValData::ValBool(does_equal));
-                        print!("OP_EQUALS       |     ")
+                        //print!("OP_EQUALS       |     ")
                     }
                     NoOp => todo!(),
                     OpGrouping => panic!("compiler error..."),
                     OpPop => {
-                        print!("OP_POP          |     ");
+                        //print!("OP_POP          |     ");
                         stack.pop();
                     }
                     OpJumpIfFalse => {
@@ -132,7 +132,7 @@ impl<'a> Vm<'a> {
                         if !condition {
                             idx = instruction_idx - 1;
                         }
-                        print!("OP_JUMP_IF_FALSE: {}|     ", instruction_idx);
+                        //print!("OP_JUMP_IF_FALSE: {}|     ", instruction_idx);
                     }
                     OpJump => {
                         let instruction_idx = get_instruction_idx(&mut idx, instructions, offset);
@@ -140,15 +140,16 @@ impl<'a> Vm<'a> {
                     }
                     OpLoop => {
                         let instruction_idx = get_instruction_idx(&mut idx, instructions, offset);
+                        //println!("The end of the loop is at idx {instruction_idx}!!!!");
                         breakpoints.push((idx, instruction_idx - 1));
-                        print!("OP_LOOP: {}    |     ", instruction_idx);
+                        //print!("OP_LOOP: {}    |     ", instruction_idx);
                     }
                     OpBreak => {
                         print!("breakpoints: {:?}", breakpoints);
                         if let Some(loop_breakpoint) = breakpoints.pop() {
                             let new_idx = loop_breakpoint.1;
-                            print!("OP_BREAK     |    ");
-                            print!("break to {new_idx}");
+                            //print!("OP_BREAK     |    ");
+                            //print!("break to {}", new_idx + offset + 1);
                             if new_idx + 1 > instructions.len() - 1 {
                                 return InterpretResult::Breaked;
                             }
@@ -160,7 +161,7 @@ impl<'a> Vm<'a> {
                     OpContinue => {
                         if let Some(loop_breakpoint) = &breakpoints.last() {
                             let loop_start = loop_breakpoint.0;
-                            print!("OP_CONTINUE   |     ");
+                            //print!("OP_CONTINUE   |     ");
                             idx = loop_start;
                         } else {
                             panic!("continue called outside of loop");
@@ -170,30 +171,29 @@ impl<'a> Vm<'a> {
                         let loop_count = stack.pop().unwrap().unwrap_int();
                         idx += 1; // 'OpLoop'
                         let instruction_idx = get_instruction_idx(&mut idx, instructions, offset);
-                        println!(
-                            "interpreting {} to {}, {loop_count} times",
-                            idx - 1,
-                            instruction_idx - 2
-                        );
+                        //println!(
+                        // "interpreting {} to {}, {loop_count} times",
+                        //idx - 1,
+                        //instruction_idx - 1
+                        //);
                         for _ in 0..loop_count {
                             match Self::interpret(
-                                &instructions[(idx - 1)..(instruction_idx - 2)],
+                                &instructions[(idx - 1)..(instruction_idx)],
                                 constants,
                                 stack,
-                                idx + 1,
+                                idx - 1,
                             ) {
                                 InterpretResult::Done => (),
                                 InterpretResult::Breaked => break,
                             }
                         }
-                        println!("setting idx to {}", instruction_idx - 3);
-                        idx = instruction_idx - 3;
+                        idx = instruction_idx - 1;
                     }
                 },
                 _ => panic!("expected an operation, got {:?}", current_instruction),
             }
             idx += 1;
-            println!("{:?}", stack);
+            //println!("{:?}", stack);
         }
     }
 
@@ -216,6 +216,7 @@ fn get_constant_idx(idx: &mut usize, instructions: &[Instruction]) -> u8 {
 
 fn get_instruction_idx(idx: &mut usize, instructions: &[Instruction], offset: usize) -> usize {
     *idx += 1;
+    //println!("offset is {}", offset);
     match instructions[*idx] {
         Instruction::InstructionIdx(idx) => idx - offset,
         _ => panic!("expected an instruction idx, got {:?}", instructions[*idx]),

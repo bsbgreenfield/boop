@@ -441,36 +441,6 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn loop_block(&mut self) -> usize {
-        if !match_token(self.parser.parse_next(), Token::TkOpenBracket) {
-            panic!("Expected '{{' at the beginning of a block");
-        }
-        let loop_start = self.code.len() + 1;
-        self.begin_scope();
-        self.emit_loop(0);
-        loop {
-            if let Some(token) = self.parser.peek() {
-                match token {
-                    //TODO: make a new instruction for instr idx instead of constant idx
-                    Token::TkOpenBracket => self.block(),
-                    Token::TkCloseBracket => {
-                        self.parser.parse_next();
-                        break;
-                    }
-                    _ => {
-                        if self.statement() {
-                            continue;
-                        }
-                        panic!("expected a '}}' to end the loop");
-                    }
-                }
-            }
-        }
-        self.code[loop_start] = Instruction::from_instruction_idx(self.code.len() + 2);
-        self.end_scope();
-        return loop_start;
-    }
-
     pub fn statement(&mut self) -> bool {
         if let Some(token) = self.parser.peek() {
             match token {
@@ -540,24 +510,61 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn loop_statement(&mut self) {
-        self.parser.parse_next(); // consume the 'loop' word
-        if match_token(self.parser.peek(), Token::TkFor) {
-            self.loop_for_statement();
-            self.loop_block();
-        } else {
-            let loop_start = self.loop_block();
-            self.emit_jump(loop_start);
+    fn b_loop(&mut self) -> usize {
+        if !match_token(self.parser.parse_next(), Token::TkOpenBracket) {
+            panic!("Expected '{{' at the beginning of a block");
         }
+        let loop_start = self.code.len() + 1;
+        self.begin_scope();
+        self.emit_loop(0);
+        loop {
+            if let Some(token) = self.parser.peek() {
+                match token {
+                    //TODO: make a new instruction for instr idx instead of constant idx
+                    Token::TkOpenBracket => self.block(),
+                    Token::TkCloseBracket => {
+                        self.parser.parse_next();
+                        break;
+                    }
+                    _ => {
+                        if self.statement() {
+                            continue;
+                        }
+                        panic!("expected a '}}' to end the loop");
+                    }
+                }
+            }
+        }
+        self.end_scope();
+        return loop_start;
     }
 
-    fn loop_for_statement(&mut self) {
+    fn loop_block(&mut self) -> usize {
+        // for regular loops, emit instructions for loop, followed by jump to start
+        let loop_start = self.b_loop();
+        self.emit_jump(loop_start);
+        return loop_start;
+    }
+
+    fn loop_statement(&mut self) {
+        self.parser.parse_next(); // consume the 'loop' word
+        let loop_start;
+        if match_token(self.parser.peek(), Token::TkFor) {
+            loop_start = self.loop_for_statement();
+        } else {
+            loop_start = self.loop_block();
+        }
+        self.code[loop_start] = Instruction::from_instruction_idx(self.code.len());
+    }
+
+    fn loop_for_statement(&mut self) -> usize {
         self.parser.parse_next(); // consume the 'for'
         let loop_count = self.expression(None, Token::TkOpenBracket); // int count left on stack
         if loop_count != ValType::ValNumType {
             panic!("loop for count must be an integer");
         }
         self.emit_operation(Operations::OpLoopFor);
+        self.b_loop()
     }
 
     fn if_statement(&mut self) {
