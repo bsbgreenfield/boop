@@ -45,37 +45,34 @@ impl<'a> Vm<'a> {
             }
             let current_instruction = &instructions[idx];
             use Operations::*;
+
+            debug_vm(&instructions, idx, &stack);
             match current_instruction {
                 Instruction::Operation(op) => match op {
                     Operations::OpConstant => {
                         let constant_idx = get_constant_idx(&mut idx, instructions);
                         let val: ValData = constants[constant_idx as usize].data.clone();
                         stack.push(val);
-                        //print!("OP CONSTANT: {:?}  |     ", &constant_idx);
                     }
                     OpAdd => {
                         let second_num = stack.pop().unwrap().unwrap_int();
                         let first_num = stack.pop().unwrap().unwrap_int();
                         stack.push(ValData::ValNum(first_num + second_num));
-                        //print!("OP ADD          |     ");
                     }
                     OpSubtract => {
                         let second_num = stack.pop().unwrap().unwrap_int();
                         let first_num = stack.pop().unwrap().unwrap_int();
                         stack.push(ValData::ValNum(first_num - second_num));
-                        //print!("OP SUBTRACT      |     ");
                     }
                     OpMultiply => {
                         let second_num = stack.pop().unwrap().unwrap_int();
                         let first_num = stack.pop().unwrap().unwrap_int();
                         stack.push(ValData::ValNum(first_num * second_num));
-                        //print!("OP MULTIPLY     |     ");
                     }
                     OpDivide => {
                         let second_num = stack.pop().unwrap().unwrap_int();
                         let first_num = stack.pop().unwrap().unwrap_int();
                         stack.push(ValData::ValNum(first_num / second_num));
-                        //print!("OP DIVIDE       |     ");
                     }
                     OpConcat => {
                         let first_string = stack.pop().unwrap();
@@ -83,23 +80,19 @@ impl<'a> Vm<'a> {
                         let mut concat = String::from(second_string.unwrap_str());
                         concat.push_str(first_string.unwrap_str());
                         stack.push(ValData::ValObj(Rc::new(ObjString::new_from_heap(concat))));
-                        //print!("OP CONCAT      |     ");
                     }
                     OpGetLocal => {
                         let constant_idx = get_constant_idx(&mut idx, instructions);
                         let local: ValData = stack[constant_idx as usize].clone();
                         stack.push(local);
-                        //print!("OP GET LOCAL: {} |     ", constant_idx);
                     }
                     OpSetLocal => {
                         let constant_idx = get_constant_idx(&mut idx, instructions);
                         let new_value = stack.pop().unwrap();
                         stack[constant_idx as usize] = new_value;
-                        //print!("OP_SET_LOCAL: {}  |     ", constant_idx);
                     }
                     OpPrint => {
                         stack.pop().unwrap().print_value();
-                        //print!("OP_PRINT        |     ")
                     }
                     OpAnd => todo!(),
                     OpOr => todo!(),
@@ -118,12 +111,10 @@ impl<'a> Vm<'a> {
                         let val_1 = stack.pop().unwrap();
                         let does_equal = val_1.compare_value(&val_2);
                         stack.push(ValData::ValBool(does_equal));
-                        //print!("OP_EQUALS       |     ")
                     }
                     NoOp => todo!(),
                     OpGrouping => panic!("compiler error..."),
                     OpPop => {
-                        //print!("OP_POP          |     ");
                         stack.pop();
                     }
                     OpJumpIfFalse => {
@@ -132,7 +123,6 @@ impl<'a> Vm<'a> {
                         if !condition {
                             idx = instruction_idx - 1;
                         }
-                        //print!("OP_JUMP_IF_FALSE: {}|     ", instruction_idx);
                     }
                     OpJump => {
                         let instruction_idx = get_instruction_idx(&mut idx, instructions, offset);
@@ -140,16 +130,11 @@ impl<'a> Vm<'a> {
                     }
                     OpLoop => {
                         let instruction_idx = get_instruction_idx(&mut idx, instructions, offset);
-                        //println!("The end of the loop is at idx {instruction_idx}!!!!");
                         breakpoints.push((idx, instruction_idx - 1));
-                        //print!("OP_LOOP: {}    |     ", instruction_idx);
                     }
                     OpBreak => {
-                        print!("breakpoints: {:?}", breakpoints);
                         if let Some(loop_breakpoint) = breakpoints.pop() {
                             let new_idx = loop_breakpoint.1;
-                            //print!("OP_BREAK     |    ");
-                            //print!("break to {}", new_idx + offset + 1);
                             if new_idx + 1 > instructions.len() - 1 {
                                 return InterpretResult::Breaked;
                             }
@@ -161,7 +146,6 @@ impl<'a> Vm<'a> {
                     OpContinue => {
                         if let Some(loop_breakpoint) = &breakpoints.last() {
                             let loop_start = loop_breakpoint.0;
-                            //print!("OP_CONTINUE   |     ");
                             idx = loop_start;
                         } else {
                             panic!("continue called outside of loop");
@@ -171,11 +155,6 @@ impl<'a> Vm<'a> {
                         let loop_count = stack.pop().unwrap().unwrap_int();
                         idx += 1; // 'OpLoop'
                         let instruction_idx = get_instruction_idx(&mut idx, instructions, offset);
-                        //println!(
-                        // "interpreting {} to {}, {loop_count} times",
-                        //idx - 1,
-                        //instruction_idx - 1
-                        //);
                         for _ in 0..loop_count {
                             match Self::interpret(
                                 &instructions[(idx - 1)..(instruction_idx)],
@@ -193,7 +172,6 @@ impl<'a> Vm<'a> {
                 _ => panic!("expected an operation, got {:?}", current_instruction),
             }
             idx += 1;
-            //println!("{:?}", stack);
         }
     }
 
@@ -216,7 +194,6 @@ fn get_constant_idx(idx: &mut usize, instructions: &[Instruction]) -> u8 {
 
 fn get_instruction_idx(idx: &mut usize, instructions: &[Instruction], offset: usize) -> usize {
     *idx += 1;
-    //println!("offset is {}", offset);
     match instructions[*idx] {
         Instruction::InstructionIdx(idx) => idx - offset,
         _ => panic!("expected an instruction idx, got {:?}", instructions[*idx]),
@@ -231,12 +208,91 @@ fn debug_instructions(instructions: &Vec<Instruction>) {
     println!("_______________________________");
 }
 
-fn debug_print_vm(current_instruction: Instruction, stack: &Vec<ValData>) {
-    match current_instruction {
-        Instruction::Operation(op) => print!("{:?}", op),
-        Instruction::ConstantIdx(idx) => print!(": {:?}", idx),
-        Instruction::InstructionIdx(idx) => print!(": {:?}", idx),
+fn debug_vm(instructions: &[Instruction], instr_idx: usize, stack: &Vec<ValData>) {
+    use Operations::*;
+    let instruction = &instructions[instr_idx];
+    let next_instruction;
+    if instr_idx > instructions.len() - 2 {
+        next_instruction = None;
+    } else {
+        next_instruction = Some(&instructions[instr_idx + 1]);
     }
-    print!(" |     ");
+    let idx: u8 = match next_instruction {
+        Some(instr) => match instr {
+            Instruction::InstructionIdx(idx) => *idx as u8,
+            Instruction::ConstantIdx(idx) => *idx,
+            _ => 0,
+        },
+        None => 0,
+    };
+    match instruction {
+        Instruction::Operation(op) => match op {
+            OpConstant => {
+                print!("OP CONSTANT: {:?}      |     ", idx);
+            }
+            OpAdd => {
+                print!("OP ADD              |     ");
+            }
+            OpSubtract => {
+                print!("OP SUBTRACT          |     ");
+            }
+            OpMultiply => {
+                print!("OP MULTIPLY         |     ");
+            }
+            OpDivide => {
+                print!("OP DIVIDE           |     ");
+            }
+            OpConcat => {
+                print!("OP CONCAT          |     ");
+            }
+            OpGetLocal => {
+                print!("OP GET LOCAL: {}     |     ", idx);
+            }
+            OpSetLocal => {
+                print!("OP_SET_LOCAL: {}     |     ", idx);
+            }
+            OpPrint => {
+                print!("OP_PRINT            |     ")
+            }
+            OpAnd => todo!(),
+            OpOr => todo!(),
+            OpLessThan => {
+                print!("OP_LESS              |     ")
+            }
+            OpGreaterThan => {
+                print!("OP_GREATER          |     ")
+            }
+            OpEquals => {
+                print!("OP_EQUALS           |     ")
+            }
+            NoOp => todo!(),
+            OpGrouping => panic!("compiler error..."),
+            OpPop => {
+                print!("OP_POP              |     ");
+            }
+            OpJumpIfFalse => {
+                print!("OP_JUMP_IF_FALSE: {}|     ", idx);
+            }
+            OpJump => {
+                print!("OP_JUMP {}           |     ", idx);
+            }
+            OpLoop => {
+                print!("OP_LOOP: {}         |     ", idx);
+            }
+            OpBreak => {
+                print!("OP_BREAK            |    ");
+            }
+            OpContinue => {
+                print!("OP_CONTINUE       |     ");
+            }
+            OpLoopFor => {
+                print!(
+                    "OP_LOOP_FOR {:?}       |     ",
+                    stack.last().unwrap().unwrap_int()
+                );
+            }
+        },
+        _ => (),
+    }
     println!("{:?}", stack);
 }

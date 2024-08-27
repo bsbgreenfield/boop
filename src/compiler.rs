@@ -1,14 +1,10 @@
 use core::fmt;
 use core::panic;
-use std::borrow::Borrow;
-use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::usize;
-use std::{collections::hash_map, mem};
 
 use crate::object::ObjString;
-use crate::r#type::DataType;
 use crate::value;
 use crate::value::ValType;
 use crate::{
@@ -309,7 +305,7 @@ impl<'a> Compiler<'a> {
             TkAnd => OpAnd,
             TkOr => OpOr,
             TkLessThan => OpLessThan,
-            TkGreaterThan => OpLessThan,
+            TkGreaterThan => OpGreaterThan,
             TkDoubleEquals => OpEquals,
             _ => {
                 panic!("Expected an operator token, got {:?}", token);
@@ -380,13 +376,11 @@ impl<'a> Compiler<'a> {
                     }
                     _ => {
                         if !self.statement() {
-                            println!("locals!!!!!!!!!!: {:?}", self.locals);
                             return;
                         }
                     }
                 };
             } else {
-                println!("locals!!!!!!!!!!: {:?}", self.locals);
                 return;
             }
         }
@@ -582,15 +576,16 @@ impl<'a> Compiler<'a> {
                 self.emit_jif(0);
                 let index_of_if = self.code.len() - 1;
                 self.block();
-                self.code[index_of_if] = Instruction::from_instruction_idx(self.code.len() + 2);
+                self.code[index_of_if] = Instruction::from_instruction_idx(self.code.len() + 2); // jump
+                                                                                                 // to the end of the if block, including the jump instruction
                 let index_of_else = self.code.len() - 1;
                 self.emit_jump(0); // jump to the end of the else statement
                 if match_token(self.parser.peek(), Token::TkElse) {
                     self.parser.parse_next();
                     self.block();
-                    self.code[index_of_else + 2] =
-                        Instruction::from_instruction_idx(self.code.len());
                 }
+                // jump to the end of the condition, including the else, if applicable
+                self.code[index_of_else + 2] = Instruction::from_instruction_idx(self.code.len());
             } else {
                 panic!("the condition inside of the condition block evaluate to a boolean");
             }
@@ -1308,11 +1303,12 @@ mod tests {
                 Instruction::from_constant_idx(1),
                 Instruction::from_operation(OpEquals),
                 Instruction::from_operation(OpJumpIfFalse),
-                Instruction::from_constant_idx(10),
+                Instruction::from_instruction_idx(12),
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(2),
                 Instruction::from_operation(OpPrint),
-                Instruction::from_operation(OpPop),
+                Instruction::from_operation(OpJump),
+                Instruction::from_instruction_idx(12),
             ]
         )
     }
@@ -1333,14 +1329,15 @@ mod tests {
                 Instruction::from_constant_idx(1),
                 Instruction::from_operation(OpEquals),
                 Instruction::from_operation(OpJumpIfFalse),
-                Instruction::from_constant_idx(10),
+                Instruction::from_instruction_idx(12),
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(2),
                 Instruction::from_operation(OpPrint),
+                Instruction::from_operation(OpJump),
+                Instruction::from_instruction_idx(15),
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(3),
                 Instruction::from_operation(OpPrint),
-                Instruction::from_operation(OpPop),
             ]
         )
     }

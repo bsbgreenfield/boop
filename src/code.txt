@@ -1,5 +1,10 @@
-loop for 5 {
-	print "hi camille";
-}
-
-print "done looping";
+int i = 0;
+loop {
+	if (i == 3)	{
+		break;
+	} else {
+	 	print "here";
+		i = i + 1;
+	}
+} 
+print "done";
