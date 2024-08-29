@@ -106,6 +106,25 @@ impl<'a> Vm<'a> {
                         let val_1 = stack.pop().unwrap().unwrap_int();
                         stack.push(ValData::ValBool(val_1 > val_2));
                     }
+                    OpGreaterEquals => {
+                        let val_2 = stack.pop().unwrap().unwrap_int();
+                        let val_1 = stack.pop().unwrap().unwrap_int();
+                        stack.push(ValData::ValBool(val_1 >= val_2));
+                    }
+                    OpLessEquals => {
+                        let val_2 = stack.pop().unwrap().unwrap_int();
+                        let val_1 = stack.pop().unwrap().unwrap_int();
+                        stack.push(ValData::ValBool(val_1 <= val_2));
+                    }
+                    OpNot => {
+                        let val = stack.pop().unwrap().unwrap_bool();
+                        stack.push(ValData::ValBool(!val));
+                    }
+                    OpNotEquals => {
+                        let val_2 = stack.pop().unwrap().unwrap_int();
+                        let val_1 = stack.pop().unwrap().unwrap_int();
+                        stack.push(ValData::ValBool(val_1 != val_2));
+                    }
                     OpEquals => {
                         let val_2 = stack.pop().unwrap();
                         let val_1 = stack.pop().unwrap();
@@ -252,18 +271,30 @@ fn debug_vm(instructions: &[Instruction], instr_idx: usize, stack: &Vec<ValData>
                 print!("OP_SET_LOCAL: {}     |     ", idx);
             }
             OpPrint => {
-                print!("OP_PRINT            |     ")
+                print!("OP_PRINT            |     ");
             }
             OpAnd => todo!(),
             OpOr => todo!(),
             OpLessThan => {
-                print!("OP_LESS              |     ")
+                print!("OP_LESS              |     ");
             }
             OpGreaterThan => {
-                print!("OP_GREATER          |     ")
+                print!("OP_GREATER          |     ");
             }
             OpEquals => {
-                print!("OP_EQUALS           |     ")
+                print!("OP_EQUALS           |     ");
+            }
+            OpLessEquals => {
+                print!("OP_LESS_EQUALS      |     ");
+            }
+            OpGreaterEquals => {
+                print!("OP_GREATER_EQUALS   |     ");
+            }
+            OpNotEquals => {
+                print!("OP_EQUALS            |     ");
+            }
+            OpNot => {
+                print!("OP_NOT               |     ");
             }
             NoOp => todo!(),
             OpGrouping => panic!("compiler error..."),

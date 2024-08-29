@@ -36,13 +36,17 @@ static KEYWORD_HASH: LazyLock<HashMap<&str, Token>> = LazyLock::new(|| generate_
 pub enum Token {
     TkNum,
     TkEquals,
+    TkNotEquals,
     TkDoubleEquals,
     TkGreaterThan,
+    TkGreaterEquals,
+    TkLessEquals,
     TkLessThan,
     TkPlus,
     TkMinus,
     TkStar,
     TkSlash,
+    TkBang,
     TkSemicolon,
     TkOpenParen,
     TkCloseParen,
@@ -277,21 +281,28 @@ impl<'a> Parser<'a> {
                         '+' => Some(TkPlus),
                         '-' => Some(TkMinus),
                         ';' => Some(TkSemicolon),
-                        '=' => {
-                            if let Some(maybe_equals) = self.code_iter.peek() {
-                                match maybe_equals {
-                                    '=' => {
-                                        self.next_char();
-                                        return Some(TkDoubleEquals);
-                                    }
-                                    _ => Some(TkEquals),
-                                }
-                            } else {
-                                return None;
+                        '=' => match self.next_symbol() {
+                            '=' => {
+                                self.next_char();
+                                Some(TkDoubleEquals)
                             }
-                        }
-                        '>' => Some(TkGreaterThan),
-                        '<' => Some(TkLessThan),
+                            _ => Some(TkEquals),
+                        },
+                        '>' => match self.next_symbol() {
+                            '=' => {
+                                self.next_char();
+                                Some(TkGreaterEquals)
+                            }
+                            _ => Some(TkGreaterThan),
+                        },
+
+                        '<' => match self.next_symbol() {
+                            '=' => {
+                                self.next_char();
+                                Some(TkLessEquals)
+                            }
+                            _ => Some(TkLessThan),
+                        },
                         '*' => Some(TkStar),
                         '/' => Some(TkSlash),
                         '(' => Some(TkOpenParen),
@@ -299,6 +310,13 @@ impl<'a> Parser<'a> {
                         '}' => Some(TkCloseBracket),
                         ')' => Some(TkCloseParen),
                         ';' => Some(TkSemicolon),
+                        '!' => match self.next_symbol() {
+                            '=' => {
+                                self.next_char();
+                                Some(TkNotEquals)
+                            }
+                            _ => Some(TkBang),
+                        },
                         _ => self.try_parse_identifier(),
                     };
                     return_token.insert(some_token?);
@@ -306,6 +324,12 @@ impl<'a> Parser<'a> {
             }
         }
         return return_token;
+    }
+    fn next_symbol(&mut self) -> char {
+        *self
+            .code_iter
+            .peek()
+            .unwrap_or_else(|| panic!("didnt expect EOF"))
     }
 }
 

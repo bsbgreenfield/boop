@@ -24,6 +24,10 @@ pub enum Operations {
     OpOr,
     OpGreaterThan,
     OpLessThan,
+    OpGreaterEquals,
+    OpLessEquals,
+    OpNot,
+    OpNotEquals,
     OpJump,
     OpEquals,
     OpPop,
@@ -111,6 +115,10 @@ fn prec_of(operation: &Operations) -> Precedence {
         OpBreak => PrecNone,
         OpContinue => PrecNone,
         OpLoopFor => PrecNone,
+        OpNot => PrecUnary,
+        OpNotEquals => PrecEquality,
+        OpLessEquals => PrecComparison,
+        OpGreaterEquals => PrecComparison,
     }
 }
 
@@ -307,6 +315,10 @@ impl<'a> Compiler<'a> {
             TkLessThan => OpLessThan,
             TkGreaterThan => OpGreaterThan,
             TkDoubleEquals => OpEquals,
+            TkLessEquals => OpLessEquals,
+            TkGreaterEquals => OpGreaterEquals,
+            TkBang => OpNot,
+            TkNotEquals => OpNotEquals,
             _ => {
                 panic!("Expected an operator token, got {:?}", token);
             }
@@ -484,6 +496,10 @@ impl<'a> Compiler<'a> {
                 | Token::TkOpenBracket
                 | Token::TkCloseBracket
                 | Token::TkOpenParen
+                | Token::TkBang
+                | Token::TkNotEquals
+                | Token::TkLessEquals
+                | Token::TkGreaterEquals
                 | Token::TkCloseParen => {
                     panic!("expected a statement or expression");
                 }
@@ -810,7 +826,7 @@ impl<'a> Compiler<'a> {
                                     );
                                 }
                             }
-                            Operations::OpAnd | Operations::OpOr => {
+                            Operations::OpAnd | Operations::OpOr | Operations::OpNot => {
                                 if can_and_or_or(operand_1, operand_2, operand_type_stack) {
                                     self.emit_operation(operation);
                                 } else {
@@ -819,6 +835,9 @@ impl<'a> Compiler<'a> {
                             }
                             Operations::OpLessThan
                             | Operations::OpGreaterThan
+                            | Operations::OpLessEquals
+                            | Operations::OpGreaterEquals
+                            | Operations::OpNotEquals
                             | Operations::OpEquals => {
                                 if can_compare(operand_1, operand_2, operand_type_stack) {
                                     self.emit_operation(operation);
