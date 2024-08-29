@@ -65,6 +65,13 @@ pub enum Instruction {
     InstructionIdx(usize),
 }
 
+pub enum ExprResult {
+    ParsedOperator(Operations),
+    ParsedOperand,
+    Assignment(ValType),
+    Done(ValType),
+}
+
 impl Instruction {
     pub fn from_operation(op: Operations) -> Self {
         Instruction::Operation(op)
@@ -450,7 +457,12 @@ impl<'a> Compiler<'a> {
     pub fn statement(&mut self) -> bool {
         if let Some(token) = self.parser.peek() {
             match token {
-                Token::TkNum | Token::TkString | Token::TkTrue | Token::TkFalse => {
+                Token::TkNum
+                | Token::TkString
+                | Token::TkTrue
+                | Token::TkFalse
+                | Token::TkOpenParen
+                | Token::TkBang => {
                     self.expression_statement();
                 }
                 Token::TkFor => todo!(),
@@ -687,6 +699,96 @@ impl<'a> Compiler<'a> {
         return_type
     }
 
+    fn expr_first_token(
+        &mut self,
+        operand_type_stack: &mut Vec<ValType>,
+        expected_end_token: Token,
+    ) -> ExprResult {
+        // the result of parsing the first token can be three distinct things.
+        //
+        // 1. a unary prefix operator -> just add the op to the stack.
+        //
+        // 2. constant followed by an equals sign -> reroute to assignment
+        //
+        // 3. constant followed by end token -> compile constant and then exit
+        //
+        //4. beginning of a grouping -> push OpGrouping
+        if let Some(first_token) = self.parser.parse_next() {
+            match first_token {
+                Token::TkBang => ExprResult::ParsedOperator(Operations::OpNot),
+                Token::TkIdentifier
+                | Token::TkNum
+                | Token::TkString
+                | Token::TkTrue
+                | Token::TkFalse => {
+                    if match_token(self.parser.peek(), Token::TkEquals) {
+                        return ExprResult::Assignment(self.assignment());
+                    } else {
+                        self.compile_operand(&first_token, operand_type_stack);
+                        // check for the end of the expression.
+                        if match_token(self.parser.peek(), expected_end_token) {
+                            return ExprResult::Done(*operand_type_stack.get(0).unwrap());
+                        } else {
+                            ExprResult::ParsedOperand
+                        }
+                    }
+                }
+                Token::TkOpenParen => {
+                    println!("first token was an open paren");
+                    ExprResult::ParsedOperator(Operations::OpGrouping)
+                }
+                _ => panic!("unexpected beginnging to expression: {:?}", first_token),
+            }
+        } else {
+            panic!("expected an expression");
+        }
+    }
+
+    fn expr_check_group_end(
+        &mut self,
+        operator_stack: &mut Vec<Operations>,
+        operand_type_stack: &mut Vec<ValType>,
+        expected_end_token: Token,
+    ) -> Option<ExprResult> {
+        // after each operand phase, check for the end of the statement
+        // could be a semicolon or a close paren.
+        //
+        // case 1: not a close paren, break and do nothing
+        //
+        // case 2: it is a close parens, but close paren is not the expected
+        // end -> dump stack, consume the close paren, panic if unmatched grouping, then loop to close
+        // all close parens that follow
+        //
+        // case 3: it is a close parens, and we were expecting a close parens
+        // end token, but this one closes properly -> dump the stack, consume
+        // the close paren, then loop
+        //
+        // case 4: it is a close parens, we were expecting a close parens end
+        // token, and the close parens is unmatched -> dump all, return from
+        // expression
+        loop {
+            if match_token(self.parser.peek(), Token::TkCloseParen) {
+                let did_close = self.dump_stack(operator_stack, operand_type_stack, true);
+                println!("did close = {}", did_close);
+                if expected_end_token == Token::TkCloseParen {
+                    if !did_close {
+                        self.dump_all(operator_stack, operand_type_stack);
+                        assert_eq!(operand_type_stack.len(), 1);
+                        assert_eq!(operator_stack.len(), 0);
+                        return Some(ExprResult::Done(*operand_type_stack.get(0).unwrap()));
+                    }
+                } else {
+                    if !did_close {
+                        panic!("unmatched close parentheses");
+                    }
+                }
+                self.parser.parse_next();
+            } else {
+                return None;
+            }
+        }
+    }
+
     pub fn expression(&mut self, expected_end_token: Token) -> ValType {
         let mut operator_stack: Vec<Operations> = Vec::new();
         let mut operand_type_stack: Vec<ValType> = Vec::new();
@@ -697,35 +799,12 @@ impl<'a> Compiler<'a> {
         // if its an operand, check to seee if this is an assignment by peeking
         // to see if the next token is an equals sign
         // otherwise, continue the expression as normal
-        if let Some(first_token) = self.parser.parse_next() {
-            match first_token {
-                Token::TkBang => {
-                    operator_stack.push(Operations::OpNot);
-                }
-                Token::TkIdentifier
-                | Token::TkNum
-                | Token::TkString
-                | Token::TkTrue
-                | Token::TkFalse => {
-                    if match_token(self.parser.peek(), Token::TkEquals) {
-                        return self.assignment();
-                    } else {
-                        self.compile_operand(&first_token, &mut operand_type_stack);
-                        // check for the end of the expression.
-                        if match_token(self.parser.peek(), expected_end_token) {
-                            self.dump_stack(&mut operator_stack, &mut operand_type_stack);
-                            assert_eq!(operand_type_stack.len(), 1);
-                            return *operand_type_stack.get(0).unwrap();
-                        }
-                    }
-                    operand_phase = false;
-                }
-                Token::TkOpenParen => {
-                    println!("first token was an open paren");
-                    operator_stack.push(Operations::OpGrouping);
-                }
-                _ => panic!("unexpected beginnging to expression: {:?}", first_token),
-            }
+
+        match self.expr_first_token(&mut operand_type_stack, expected_end_token) {
+            ExprResult::ParsedOperand => operand_phase = false,
+            ExprResult::ParsedOperator(op) => operator_stack.push(op),
+            ExprResult::Done(val_type) => return val_type,
+            ExprResult::Assignment(val_type) => return val_type,
         }
         loop {
             let maybe_token = self.parser.parse_next();
@@ -745,51 +824,25 @@ impl<'a> Compiler<'a> {
                         }
                         self.compile_operand(&token, &mut operand_type_stack);
                         operand_phase = false;
-                        // after each operand phase, check for the end of the statement
-                        // could be a semicolon or a close paren.
-                        //
-                        // case 1: not a close paren, break and do nothing
-                        //
-                        // case 2: it is a close parens, but close paren is not the expected
-                        // end -> dump stack, consume the close paren, panic if unmatched grouping, then loop to close
-                        // all close parens that follow
-                        //
-                        // case 3: it is a close parens, and we were expecting a close parens
-                        // end token, but this one closes properly -> dump the stack, consume
-                        // the close paren, then loop
-                        //
-                        // case 4: it is a close parens, we were expecting a close parens end
-                        // token, and the close parens is unmatched -> dump all, return from
-                        // expression
-                        loop {
-                            if match_token(self.parser.peek(), Token::TkCloseParen) {
-                                let did_close =
-                                    self.dump_stack(&mut operator_stack, &mut operand_type_stack);
-                                if expected_end_token == Token::TkCloseParen {
-                                    if !did_close {
-                                        println!("dumping because this is the expected end token");
-                                        self.dump_all(&mut operator_stack, &mut operand_type_stack);
-                                        assert_eq!(operand_type_stack.len(), 1);
-                                        return *operand_type_stack.get(0).unwrap();
-                                    }
-                                } else {
-                                    if !did_close {
-                                        panic!("unmatched close parentheses");
-                                    }
-                                }
-                                println!("normal group end");
-                                self.parser.parse_next();
-                            } else {
-                                break;
-                            }
+
+                        match self.expr_check_group_end(
+                            &mut operator_stack,
+                            &mut operand_type_stack,
+                            expected_end_token,
+                        ) {
+                            Some(result) => match result {
+                                ExprResult::Done(val_type) => return val_type,
+                                _ => panic!("unexpected result"),
+                            },
+                            None => (),
                         }
 
                         // if it is not a close parens but it is an expected end token, simply
                         // return from the expression
                         if match_token(self.parser.peek(), expected_end_token) {
+                            println!("calling dump all because semicolon");
                             self.dump_all(&mut operator_stack, &mut operand_type_stack);
-                            assert_eq!(operand_type_stack.len(), 1);
-                            return *operand_type_stack.get(0).unwrap();
+                            break;
                         }
                     } else {
                         let operator =
@@ -802,7 +855,7 @@ impl<'a> Compiler<'a> {
                         if prec_of(&operator) > prec_of(top_of_operator_stack) {
                             operator_stack.push(operator);
                         } else {
-                            self.dump_stack(&mut operator_stack, &mut operand_type_stack);
+                            self.dump_stack(&mut operator_stack, &mut operand_type_stack, false);
                             operator_stack.push(operator);
                         }
                         operand_phase = true;
@@ -814,13 +867,8 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
-        if operand_type_stack.len() != 1 {
-            println!("the operatator stack was toooooooooo big");
-            println!("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&");
-            println!("****************************************dnausvduytavwddf*");
-            self.dump_all(&mut operator_stack, &mut operand_type_stack);
-        }
         assert_eq!(operand_type_stack.len(), 1);
+        assert_eq!(operator_stack.len(), 0);
         return *operand_type_stack.get(0).unwrap();
     }
 
@@ -849,7 +897,7 @@ impl<'a> Compiler<'a> {
 
     fn dump_all(&mut self, stack: &mut Vec<Operations>, operand_type_stack: &mut Vec<ValType>) {
         loop {
-            if !self.dump_stack(stack, operand_type_stack) || stack.len() == 0 {
+            if !self.dump_stack(stack, operand_type_stack, false) || stack.len() == 0 {
                 break;
             }
         }
@@ -859,18 +907,27 @@ impl<'a> Compiler<'a> {
         &mut self,
         stack: &mut Vec<Operations>,
         operand_type_stack: &mut Vec<ValType>,
+        dump_group: bool,
     ) -> bool {
-        println!("{:?}", stack);
+        if dump_group {
+            println!("dumping the group, stack is {:?}", stack);
+        } else {
+            println!("At dump stack, stack looks like this: {:?}", stack);
+        }
         if stack.len() == 0 {
             return false;
         }
         // dump until we hit a grouing operation, then pop that and exit
         while stack.len() > 0 {
             if let Some(operation) = stack.pop() {
-                println!("{:?} -- {:?}", operation, operand_type_stack);
                 match operation {
                     Operations::OpGrouping => {
-                        return true;
+                        if dump_group {
+                            return true;
+                        } else {
+                            stack.push(Operations::OpGrouping);
+                            return false;
+                        }
                     }
                     Operations::OpNot => {
                         if let Some(operand) = operand_type_stack.pop() {
@@ -1444,5 +1501,136 @@ mod tests {
                 Instruction::from_operation(OpPrint),
             ]
         )
+    }
+
+    #[test]
+    fn compile_a_statement_with_group() {
+        let code = String::from("print (1);");
+        let mut compiler = Compiler::new(&code);
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpPrint)
+            ]
+        );
+    }
+    #[test]
+    fn compile_nested_groups() {
+        let code = String::from("print (1 + (1 + 1 * 2) * ((1)));");
+        let mut compiler = Compiler::new(&code);
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(2),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(3),
+                Instruction::from_operation(OpMultiply),
+                Instruction::from_operation(OpAdd),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(4),
+                Instruction::from_operation(OpMultiply),
+                Instruction::from_operation(OpAdd),
+                Instruction::from_operation(OpPrint),
+            ]
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn panic_on_unmatched_group_end() {
+        let code = String::from("print (1 + (1 + 2)))");
+        let mut compiler = Compiler::new(&code);
+        compiler.compile();
+    }
+    #[test]
+    #[should_panic]
+    fn panic_on_unmatched_group_start() {
+        let code = String::from("(1 + ((2 + 1))");
+        let mut compiler = Compiler::new(&code);
+        compiler.compile();
+    }
+
+    #[test]
+    fn compile_if_statement_with_groups() {
+        let code = String::from("if((2 + 2) == (4 * 1)){print \"success\";}");
+        let mut compiler = Compiler::new(&code);
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpAdd),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(2),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(3),
+                Instruction::from_operation(OpMultiply),
+                Instruction::from_operation(OpEquals),
+                Instruction::from_operation(OpJumpIfFalse),
+                Instruction::from_instruction_idx(18),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(4),
+                Instruction::from_operation(OpPrint),
+                Instruction::from_operation(OpJump),
+                Instruction::from_instruction_idx(18)
+            ]
+        );
+    }
+
+    #[test]
+    fn compile_unary_negation() {
+        let code = String::from("!true;");
+        let mut compiler = Compiler::new(&code);
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpNot),
+                Instruction::from_operation(OpPop),
+            ]
+        );
+    }
+
+    #[test]
+    fn compile_expr_with_unaries() {
+        let code = String::from("!(!true or !(false and true));");
+        let mut compiler = Compiler::new(&code);
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpNot),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(2),
+                Instruction::from_operation(OpAnd),
+                Instruction::from_operation(OpNot),
+                Instruction::from_operation(OpOr),
+                Instruction::from_operation(OpNot),
+                Instruction::from_operation(OpPop),
+            ]
+        );
     }
 }
