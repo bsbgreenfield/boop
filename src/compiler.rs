@@ -451,10 +451,11 @@ impl<'a> Compiler<'a> {
         if let Some(token) = self.parser.peek() {
             match token {
                 Token::TkNum | Token::TkString | Token::TkTrue | Token::TkFalse => {
-                    self.expression_statement(None);
+                    self.expression_statement();
                 }
                 Token::TkFor => todo!(),
-                Token::TkIdentifier => self.variable(),
+                Token::TkTypeIdent => self.variable_declaration(),
+                Token::TkIdentifier => self.expression_statement(),
                 Token::TkPrint => self.print_statement(),
                 // statements that dont require semicolons at the end
                 Token::TkIf => {
@@ -569,7 +570,7 @@ impl<'a> Compiler<'a> {
 
     fn loop_for_statement(&mut self) -> usize {
         self.parser.parse_next(); // consume the 'for'
-        let loop_count = self.expression(None, Token::TkOpenBracket); // int count left on stack
+        let loop_count = self.expression(Token::TkOpenBracket); // int count left on stack
         if loop_count != ValType::ValNumType {
             panic!("loop for count must be an integer");
         }
@@ -580,7 +581,7 @@ impl<'a> Compiler<'a> {
     fn if_statement(&mut self) {
         self.parser.parse_next(); // consume the 'if'
         if match_token(self.parser.parse_next(), Token::TkOpenParen) {
-            if self.expression(None, Token::TkCloseParen) == ValType::ValBoolType {
+            if self.expression(Token::TkCloseParen) == ValType::ValBoolType {
                 assert!(
                     match_token(self.parser.parse_next(), Token::TkCloseParen),
                     "expected a ')' after the condition"
@@ -612,7 +613,7 @@ impl<'a> Compiler<'a> {
 
     fn print_statement(&mut self) {
         self.parser.parse_next(); // consume the print statement
-        self.expression(None, Token::TkSemicolon);
+        self.expression(Token::TkSemicolon);
         self.emit_operation(Operations::OpPrint);
     }
 
@@ -635,35 +636,11 @@ impl<'a> Compiler<'a> {
         None
     }
 
-    fn variable(&mut self) {
-        let maybe_operand = self.parser.parse_next(); // parse the identifier. If this turns out to be an expression
-                                                      // statement, we have to let it know that we already parsed one of its operands, oops!
-        let var_name = self.parser.get_curr_slice();
-        if let Some(type_ident) = self.types.get(var_name) {
-            return self.variable_declaration(match_val_type(type_ident));
-        }
-
-        // if this isnt a var dec, check that we know the variable
-        let local_idx = match self.has_variable(var_name) {
-            Some(local_idx) => local_idx,
-            None => panic!("unknown variable {}", var_name),
-        };
-        if let Some(maybe_equals) = self.parser.peek() {
-            match maybe_equals {
-                Token::TkEquals => {
-                    self.parser.parse_next(); // consume the equals sign
-                    self.assignment(local_idx);
-                }
-                _ => {
-                    self.expression_statement(maybe_operand.as_ref());
-                }
-            }
-        }
-    }
-
-    pub fn variable_declaration(&mut self, var_type: ValType) -> () {
+    pub fn variable_declaration(&mut self) -> () {
+        self.parser.parse_next(); // type ident
+        let var_type = match_val_type(self.parser.get_curr_slice()); // grab type name
         self.parser.parse_next(); // identifier
-        let name = self.parser.get_curr_slice().to_owned();
+        let name = self.parser.get_curr_slice().to_owned(); // grab indent name
         if let Some(_) = self.has_variable(&name) {
             panic!(
                 "A variable with the name {} already exists in this scope",
@@ -671,7 +648,7 @@ impl<'a> Compiler<'a> {
             );
         }
         if match_token(self.parser.parse_next(), Token::TkEquals) {
-            let return_type = self.expression(None, Token::TkSemicolon);
+            let return_type = self.expression(Token::TkSemicolon);
             if var_type != return_type {
                 panic!("cannot assign type {:?} to {:?}", var_type, return_type);
             }
@@ -683,32 +660,62 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn assignment(&mut self, local_idx: usize) {
-        let return_type: ValType = self.expression(None, Token::TkSemicolon);
+    pub fn expression_statement(&mut self) {
+        self.expression(Token::TkSemicolon);
+        if &self.code[self.code.len() - 2] == &Instruction::from_operation(Operations::OpSetLocal) {
+            return;
+        }
+        self.emit_operation(Operations::OpPop);
+    }
+
+    fn assignment(&mut self) -> ValType {
+        let local_idx = self.has_variable(self.parser.get_curr_slice()).unwrap();
+        self.parser.parse_next(); // consume the equals sign
+        let return_type: ValType = self.expression(Token::TkSemicolon);
+        println!("returned from expression with {:?}", return_type);
         assert_eq!(
             return_type, self.locals[local_idx].val_type,
             "cannot set a variable of type {:?} to {:?}",
             self.locals[local_idx].val_type, return_type
         );
         self.emit_set_local(local_idx);
+        return_type
     }
 
-    pub fn expression_statement(&mut self, maybe_parsed_operand: Option<&Token>) {
-        self.expression(maybe_parsed_operand, Token::TkSemicolon);
-        self.emit_operation(Operations::OpPop);
-    }
-
-    pub fn expression(
-        &mut self,
-        maybe_parsed_operand: Option<&Token>,
-        expected_end_token: Token,
-    ) -> ValType {
+    pub fn expression(&mut self, expected_end_token: Token) -> ValType {
         let mut operator_stack: Vec<Operations> = Vec::new();
         let mut operand_type_stack: Vec<ValType> = Vec::new();
         let mut operand_phase: bool = true;
-        if let Some(parsed_operand) = maybe_parsed_operand {
-            self.compile_operand(parsed_operand, &mut operand_type_stack);
-            operand_phase = false;
+
+        // consume the first token of the expression.
+        // it could be either an operand, an open paren, or an operator (unary)
+        // if its an operand, check to seee if this is an assignment by peeking
+        // to see if the next token is an equals sign
+        // otherwise, continue the expression as normal
+        if let Some(first_token) = self.parser.parse_next() {
+            match first_token {
+                Token::TkBang => todo!("unary"),
+                Token::TkIdentifier
+                | Token::TkNum
+                | Token::TkString
+                | Token::TkTrue
+                | Token::TkFalse => {
+                    if match_token(self.parser.peek(), Token::TkEquals) {
+                        return self.assignment();
+                    } else {
+                        self.compile_operand(&first_token, &mut operand_type_stack);
+                        // check for the end of the expression.
+                        if match_token(self.parser.peek(), expected_end_token) {
+                            self.dump_stack(&mut operator_stack, &mut operand_type_stack);
+                            assert_eq!(operand_type_stack.len(), 1);
+                            return *operand_type_stack.get(0).unwrap();
+                        }
+                    }
+                    operand_phase = false;
+                }
+                Token::TkOpenParen => operator_stack.push(Operations::OpGrouping),
+                _ => panic!("unexpected beginnging to expression: {:?}", first_token),
+            }
         }
         loop {
             let maybe_token = self.parser.parse_next();
@@ -716,9 +723,7 @@ impl<'a> Compiler<'a> {
                 Some(token) => {
                     // check if the token is a grouping
                     if is_group_start(&token) {
-                        if let Some(operator) = top_of(&operand_type_stack) {
-                            operator_stack.push(self.token_to_operator(&token, operator));
-                        }
+                        operator_stack.push(Operations::OpGrouping);
                         continue;
                     } else if is_group_end(&token) {
                         if self.dump_stack(&mut operator_stack, &mut operand_type_stack) {
@@ -876,7 +881,7 @@ mod tests {
     fn compile_a_single_number() {
         let code: &String = &String::from("123");
         let mut compiler: Compiler = Compiler::new(code);
-        compiler.expression(None, Token::TkSemicolon);
+        compiler.expression(Token::TkSemicolon);
 
         assert_eq!(
             &compiler.code,
@@ -893,7 +898,7 @@ mod tests {
     fn compile_an_arithmatic_expression() {
         let code: &String = &String::from("1 + (2 * 3)");
         let mut compiler: Compiler = Compiler::new(code);
-        compiler.expression(None, Token::TkEof);
+        compiler.expression(Token::TkEof);
 
         assert_eq!(
             &compiler.code,
@@ -918,7 +923,7 @@ mod tests {
     fn compile_a_boolean() {
         let code: &String = &String::from("true");
         let mut compiler: Compiler = Compiler::new(code);
-        compiler.expression(None, Token::TkEof);
+        compiler.expression(Token::TkEof);
         assert_eq!(
             &compiler.code,
             &vec![
@@ -934,7 +939,7 @@ mod tests {
     fn compile_a_boolean_operation() {
         let code: &String = &String::from("true and (false or false) and true");
         let mut compiler: Compiler = Compiler::new(code);
-        compiler.expression(None, Token::TkEof);
+        compiler.expression(Token::TkEof);
         assert_eq!(
             &compiler.code,
             &vec![
@@ -968,7 +973,7 @@ mod tests {
     fn panic_adding_num_and_bool() {
         let code: &String = &String::from("1 + (true and true)");
         let mut compiler: Compiler = Compiler::new(code);
-        compiler.expression(None, Token::TkEof);
+        compiler.expression(Token::TkEof);
     }
 
     #[test]
@@ -976,7 +981,7 @@ mod tests {
     fn panic_multiplying_num_and_bool() {
         let code: &String = &String::from("1 * false + 2");
         let mut compiler: Compiler = Compiler::new(code);
-        compiler.expression(None, Token::TkEof);
+        compiler.expression(Token::TkEof);
     }
 
     #[test]
@@ -985,7 +990,7 @@ mod tests {
         my_string.push_str("hello");
         my_string.write_char('"').unwrap();
         let mut compiler: Compiler = Compiler::new(&my_string);
-        compiler.expression(None, Token::TkEof);
+        compiler.expression(Token::TkEof);
 
         assert_eq!(
             &compiler.code,
@@ -1010,7 +1015,7 @@ mod tests {
         my_string_1.push_str(&my_string_3);
         my_string_1.push_str(&my_string_2);
         let mut compiler: Compiler = Compiler::new(&my_string_1);
-        compiler.expression(None, Token::TkEof);
+        compiler.expression(Token::TkEof);
 
         assert_eq!(
             &compiler.code,

@@ -1,1 +1,4 @@
-!true;
+int i = 1 + 1;
+i = 3;
+i = i + 1;
+print i;

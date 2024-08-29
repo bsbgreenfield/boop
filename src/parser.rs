@@ -30,7 +30,19 @@ fn generate_keyword_hash() -> HashMap<&'static str, Token> {
     result
 }
 
+fn generate_type_hash() -> HashSet<&'static str> {
+    //TODO: something must be done about this...
+    let mut result = HashSet::new();
+    result.insert("int");
+    result.insert("String");
+    result.insert("bool");
+
+    result
+}
+
 static KEYWORD_HASH: LazyLock<HashMap<&str, Token>> = LazyLock::new(|| generate_keyword_hash());
+
+static TYPE_HASH: LazyLock<HashSet<&str>> = LazyLock::new(|| generate_type_hash());
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Token {
@@ -64,6 +76,7 @@ pub enum Token {
     TkOr,
     TkString,
     TkIdentifier,
+    TkTypeIdent,
     TkPrint,
     TkEof,
     TkErr,
@@ -215,6 +228,9 @@ impl<'a> Parser<'a> {
         while let Some(char) = self.code_iter.peek() {
             match char {
                 '"' | '+' | '-' | '*' | '/' | '(' | ')' | ' ' | ';' => {
+                    if TYPE_HASH.contains(self.get_curr_slice()) {
+                        return Some(Token::TkTypeIdent);
+                    }
                     return Some(Token::TkIdentifier);
                 }
                 _ => self.next_char(),
