@@ -604,7 +604,7 @@ impl<'a> Compiler<'a> {
                 // jump to the end of the condition, including the else, if applicable
                 self.code[index_of_else + 2] = Instruction::from_instruction_idx(self.code.len());
             } else {
-                panic!("the condition inside of the condition block evaluate to a boolean");
+                panic!("the condition inside of the condition block must evaluate to a boolean");
             }
         } else {
             panic!("expected a condition wrapped in parentheses | if (...boolean) |");
@@ -662,9 +662,14 @@ impl<'a> Compiler<'a> {
 
     pub fn expression_statement(&mut self) {
         self.expression(Token::TkSemicolon);
+
+        // for set expression, we already the stack to move the value of the expression into the
+        // local slot
         if &self.code[self.code.len() - 2] == &Instruction::from_operation(Operations::OpSetLocal) {
             return;
         }
+
+        //otherwise, pop the result manually
         self.emit_operation(Operations::OpPop);
     }
 
@@ -694,7 +699,9 @@ impl<'a> Compiler<'a> {
         // otherwise, continue the expression as normal
         if let Some(first_token) = self.parser.parse_next() {
             match first_token {
-                Token::TkBang => todo!("unary"),
+                Token::TkBang => {
+                    operator_stack.push(Operations::OpNot);
+                }
                 Token::TkIdentifier
                 | Token::TkNum
                 | Token::TkString
@@ -713,7 +720,10 @@ impl<'a> Compiler<'a> {
                     }
                     operand_phase = false;
                 }
-                Token::TkOpenParen => operator_stack.push(Operations::OpGrouping),
+                Token::TkOpenParen => {
+                    println!("first token was an open paren");
+                    operator_stack.push(Operations::OpGrouping);
+                }
                 _ => panic!("unexpected beginnging to expression: {:?}", first_token),
             }
         }
@@ -725,26 +735,63 @@ impl<'a> Compiler<'a> {
                     if is_group_start(&token) {
                         operator_stack.push(Operations::OpGrouping);
                         continue;
-                    } else if is_group_end(&token) {
-                        if self.dump_stack(&mut operator_stack, &mut operand_type_stack) {
-                            continue;
-                        } else if match_token(self.parser.peek(), expected_end_token) {
-                            break;
-                        } else {
-                            panic!("unmatched closing parentheses");
-                        }
                     }
                     // compile constant
                     if operand_phase {
+                        // if this is a !, compile the OpNot and move next
+                        if token == Token::TkBang {
+                            operator_stack.push(Operations::OpNot);
+                            continue;
+                        }
                         self.compile_operand(&token, &mut operand_type_stack);
                         operand_phase = false;
-                        if match_token(self.parser.peek(), expected_end_token) {
-                            self.dump_stack(&mut operator_stack, &mut operand_type_stack);
-                            break;
+                        // after each operand phase, check for the end of the statement
+                        // could be a semicolon or a close paren.
+                        //
+                        // case 1: not a close paren, break and do nothing
+                        //
+                        // case 2: it is a close parens, but close paren is not the expected
+                        // end -> dump stack, consume the close paren, panic if unmatched grouping, then loop to close
+                        // all close parens that follow
+                        //
+                        // case 3: it is a close parens, and we were expecting a close parens
+                        // end token, but this one closes properly -> dump the stack, consume
+                        // the close paren, then loop
+                        //
+                        // case 4: it is a close parens, we were expecting a close parens end
+                        // token, and the close parens is unmatched -> dump all, return from
+                        // expression
+                        loop {
+                            if match_token(self.parser.peek(), Token::TkCloseParen) {
+                                let did_close =
+                                    self.dump_stack(&mut operator_stack, &mut operand_type_stack);
+                                if expected_end_token == Token::TkCloseParen {
+                                    if !did_close {
+                                        println!("dumping because this is the expected end token");
+                                        self.dump_all(&mut operator_stack, &mut operand_type_stack);
+                                        assert_eq!(operand_type_stack.len(), 1);
+                                        return *operand_type_stack.get(0).unwrap();
+                                    }
+                                } else {
+                                    if !did_close {
+                                        panic!("unmatched close parentheses");
+                                    }
+                                }
+                                println!("normal group end");
+                                self.parser.parse_next();
+                            } else {
+                                break;
+                            }
                         }
-                    }
-                    // compile operator
-                    else {
+
+                        // if it is not a close parens but it is an expected end token, simply
+                        // return from the expression
+                        if match_token(self.parser.peek(), expected_end_token) {
+                            self.dump_all(&mut operator_stack, &mut operand_type_stack);
+                            assert_eq!(operand_type_stack.len(), 1);
+                            return *operand_type_stack.get(0).unwrap();
+                        }
+                    } else {
                         let operator =
                             self.token_to_operator(&token, top_of(&operand_type_stack).unwrap());
                         let top_of_operator_stack: &Operations =
@@ -762,10 +809,16 @@ impl<'a> Compiler<'a> {
                     }
                 }
                 None => {
-                    self.dump_stack(&mut operator_stack, &mut operand_type_stack);
+                    self.dump_all(&mut operator_stack, &mut operand_type_stack);
                     break;
                 }
             }
+        }
+        if operand_type_stack.len() != 1 {
+            println!("the operatator stack was toooooooooo big");
+            println!("&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&");
+            println!("****************************************dnausvduytavwddf*");
+            self.dump_all(&mut operator_stack, &mut operand_type_stack);
         }
         assert_eq!(operand_type_stack.len(), 1);
         return *operand_type_stack.get(0).unwrap();
@@ -794,17 +847,44 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn dump_all(&mut self, stack: &mut Vec<Operations>, operand_type_stack: &mut Vec<ValType>) {
+        loop {
+            if !self.dump_stack(stack, operand_type_stack) || stack.len() == 0 {
+                break;
+            }
+        }
+    }
+
     fn dump_stack(
         &mut self,
         stack: &mut Vec<Operations>,
         operand_type_stack: &mut Vec<ValType>,
     ) -> bool {
+        println!("{:?}", stack);
+        if stack.len() == 0 {
+            return false;
+        }
         // dump until we hit a grouing operation, then pop that and exit
         while stack.len() > 0 {
             if let Some(operation) = stack.pop() {
+                println!("{:?} -- {:?}", operation, operand_type_stack);
                 match operation {
                     Operations::OpGrouping => {
                         return true;
+                    }
+                    Operations::OpNot => {
+                        if let Some(operand) = operand_type_stack.pop() {
+                            match operand {
+                                ValType::ValBoolType => {
+                                    operand_type_stack.push(ValType::ValBoolType);
+                                    self.emit_operation(Operations::OpNot);
+                                }
+                                _ => panic!(
+                                    "Can only apply the '!' operator to a boolean, receieved {:?}",
+                                    operand
+                                ),
+                            }
+                        }
                     }
                     _ => {
                         let operand_1 = operand_type_stack.pop().unwrap();

@@ -94,8 +94,16 @@ impl<'a> Vm<'a> {
                     OpPrint => {
                         stack.pop().unwrap().print_value();
                     }
-                    OpAnd => todo!(),
-                    OpOr => todo!(),
+                    OpAnd => {
+                        let val_2 = stack.pop().unwrap().unwrap_bool();
+                        let val_1 = stack.pop().unwrap().unwrap_bool();
+                        stack.push(ValData::ValBool(val_1 && val_2));
+                    }
+                    OpOr => {
+                        let val_2 = stack.pop().unwrap().unwrap_bool();
+                        let val_1 = stack.pop().unwrap().unwrap_bool();
+                        stack.push(ValData::ValBool(val_1 || val_2));
+                    }
                     OpLessThan => {
                         let val_2 = stack.pop().unwrap().unwrap_int();
                         let val_1 = stack.pop().unwrap().unwrap_int();
@@ -273,8 +281,12 @@ fn debug_vm(instructions: &[Instruction], instr_idx: usize, stack: &Vec<ValData>
             OpPrint => {
                 print!("OP_PRINT            |     ");
             }
-            OpAnd => todo!(),
-            OpOr => todo!(),
+            OpAnd => {
+                print!("OP_AND           |     ");
+            }
+            OpOr => {
+                print!("OP_OR            |     ");
+            }
             OpLessThan => {
                 print!("OP_LESS              |     ");
             }
