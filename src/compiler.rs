@@ -769,7 +769,6 @@ impl<'a> Compiler<'a> {
         loop {
             if match_token(self.parser.peek(), Token::TkCloseParen) {
                 let did_close = self.dump_stack(operator_stack, operand_type_stack, true);
-                println!("did close = {}", did_close);
                 if expected_end_token == Token::TkCloseParen {
                     if !did_close {
                         self.dump_all(operator_stack, operand_type_stack);
@@ -840,7 +839,6 @@ impl<'a> Compiler<'a> {
                         // if it is not a close parens but it is an expected end token, simply
                         // return from the expression
                         if match_token(self.parser.peek(), expected_end_token) {
-                            println!("calling dump all because semicolon");
                             self.dump_all(&mut operator_stack, &mut operand_type_stack);
                             break;
                         }
@@ -909,11 +907,6 @@ impl<'a> Compiler<'a> {
         operand_type_stack: &mut Vec<ValType>,
         dump_group: bool,
     ) -> bool {
-        if dump_group {
-            println!("dumping the group, stack is {:?}", stack);
-        } else {
-            println!("At dump stack, stack looks like this: {:?}", stack);
-        }
         if stack.len() == 0 {
             return false;
         }
@@ -1504,6 +1497,101 @@ mod tests {
     }
 
     #[test]
+    fn compile_a_loop() {
+        let code = String::from("loop { print \"hello\"; }");
+        let mut compiler = Compiler::new(&code);
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpLoop),
+                Instruction::from_instruction_idx(7),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpPrint),
+                Instruction::from_operation(OpJump),
+                Instruction::from_instruction_idx(1),
+            ]
+        );
+    }
+
+    #[test]
+    fn compile_a_break() {
+        let code = String::from("loop { print \"hello\"; break; }");
+        let mut compiler = Compiler::new(&code);
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpLoop),
+                Instruction::from_instruction_idx(8),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpPrint),
+                Instruction::from_operation(OpBreak),
+                Instruction::from_operation(OpJump),
+                Instruction::from_instruction_idx(1),
+            ]
+        )
+    }
+
+    #[test]
+    fn compile_nested_break() {
+        let code = String::from("loop { if (true) {break;}}");
+        let mut compiler = Compiler::new(&code);
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpLoop),
+                Instruction::from_instruction_idx(11),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpJumpIfFalse),
+                Instruction::from_instruction_idx(9),
+                Instruction::from_operation(OpBreak),
+                Instruction::from_operation(OpJump),
+                Instruction::from_instruction_idx(9),
+                Instruction::from_operation(OpJump),
+                Instruction::from_instruction_idx(1),
+            ]
+        );
+    }
+
+    #[test]
+    fn compile_loop_for() {
+        let code = String::from("loop for (1 + (2 + 4 / 2)) {print \"hello\";}");
+        let mut compiler = Compiler::new(&code);
+        compiler.compile();
+
+        assert_eq!(
+            &compiler.code,
+            &vec![
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(0),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(1),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(2),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(3),
+                Instruction::from_operation(OpDivide),
+                Instruction::from_operation(OpAdd),
+                Instruction::from_operation(OpAdd),
+                Instruction::from_operation(OpLoopFor),
+                Instruction::from_operation(OpLoop),
+                Instruction::from_instruction_idx(17),
+                Instruction::from_operation(OpConstant),
+                Instruction::from_constant_idx(4),
+                Instruction::from_operation(OpPrint),
+            ]
+        )
+    }
+
+    #[test]
     fn compile_a_statement_with_group() {
         let code = String::from("print (1);");
         let mut compiler = Compiler::new(&code);
@@ -1553,6 +1641,7 @@ mod tests {
         let mut compiler = Compiler::new(&code);
         compiler.compile();
     }
+
     #[test]
     #[should_panic]
     fn panic_on_unmatched_group_start() {
