@@ -2,7 +2,7 @@ use core::panic;
 use std::{rc::Rc, usize};
 
 use crate::{
-    compiler::{self, Compiler, Instruction, Operations},
+    compiler::{Compiler, Instruction, Operations},
     object::ObjString,
     value::{ValData, Value},
 };
