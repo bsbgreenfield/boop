@@ -9,6 +9,21 @@ pub enum ValType {
     ValNumType,
     ValBoolType,
     ValStringType,
+    ValFunctionType,
+}
+
+
+// TODO: make this more efficient by either making another hash set, 
+// implementing an incremental search, or hardcoding these valtypes in the Tokens.
+impl ValType {
+    pub fn from_str(type_lexeme: &str) -> Self {
+        match type_lexeme {
+           "String" => ValType::ValStringType,
+           "int" => ValType::ValNumType,
+           "bool" => ValType::ValBoolType,
+           _ => panic!("unimplemented"),
+        }
+    }
 }
 
 pub enum ValData {

@@ -1,6 +1,11 @@
 #![allow(unused)]
 use core::panic;
 
+use crate::{
+    compiler::{Chunk, Instruction},
+    value::{ValType, Value},
+};
+
 #[derive(PartialEq)]
 pub enum ObjType {
     ObjStringType,
@@ -15,7 +20,9 @@ pub trait Object {
         }
     }
 
-    fn get_string(&self) -> &str;
+    fn get_string(&self) -> &str {
+        panic!("get_string unimplemented for this type of object");
+    }
 }
 
 pub struct ObjString {
@@ -45,5 +52,33 @@ struct ObjBobj {}
 impl Object for ObjBobj {
     fn get_string(&self) -> &str {
         panic!("get_string cannot be called on a Object");
+    }
+}
+
+pub enum FunctionType {
+    Script,
+    Function,
+    Method,
+}
+
+pub struct ObjFunction {
+    pub f_type: FunctionType,
+    pub parameters: Vec<ValType>,
+    pub chunk: Chunk,
+}
+
+impl Object for ObjFunction {}
+
+impl ObjFunction {
+    pub fn new(f_type: FunctionType) -> Self {
+        ObjFunction {
+            f_type,
+            chunk: Chunk::new(),
+            parameters : Vec::<ValType>::new(),
+        }
+    }
+
+    pub fn set_params(&mut self, parameters: Vec<ValType>) -> () {
+        self.parameters = parameters;
     }
 }

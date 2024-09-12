@@ -204,9 +204,9 @@ impl<'a> Vm<'a> {
 
     pub fn run(&'a mut self) -> Result<(), RuntimeError> {
         self.compiler.compile();
-        debug_instructions(&self.compiler.code);
-        let instructions = &self.compiler.code;
-        Self::interpret(instructions, &self.compiler.constants, &mut self.stack, 0);
+        debug_instructions(&self.compiler.function_stack.first().unwrap().chunk.code);
+        let instructions = &self.compiler.function_stack.first().unwrap().chunk.code;
+        Self::interpret(instructions, &self.compiler.function_stack.first().unwrap().chunk.constants, &mut self.stack, 0);
         Ok(())
     }
 }

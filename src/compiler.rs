@@ -1,9 +1,11 @@
 use core::fmt;
 use core::panic;
+use std::borrow::BorrowMut;
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::usize;
 
+use crate::object::ObjFunction;
 use crate::object::ObjString;
 use crate::value;
 use crate::value::ValType;
@@ -245,12 +247,26 @@ impl Local {
     }
 }
 
+pub struct Chunk {
+    pub code: Vec<Instruction>,
+    pub constants: Vec<Value>,
+    locals: Vec<Local>,
+}
+
+impl Chunk {
+    pub fn new() -> Self {
+        Chunk {
+            code: Vec::<Instruction>::new(),
+            constants: Vec::<Value>::new(),
+            locals: Vec::<Local>::new(),
+        }
+    }
+}
+
 pub struct Compiler<'a> {
     parser: Parser<'a>,
-    pub constants: Vec<Value>,
-    pub code: Vec<Instruction>,
+    pub function_stack: Vec<ObjFunction>,
     types: HashSet<String>,
-    locals: Vec<Local>,
     scope_depth: u8,
 }
 
@@ -262,12 +278,18 @@ impl<'a> Compiler<'a> {
         types.insert(String::from("String"));
         Compiler {
             parser: Parser::new(code),
-            constants: Vec::<Value>::new(),
-            code: Vec::<Instruction>::new(),
+            function_stack: vec![ObjFunction::new(crate::object::FunctionType::Script)],
             types,
-            locals: Vec::with_capacity(256),
             scope_depth: 0,
         }
+
+    }
+    
+    fn current_chunk_mut(&mut self) -> &mut Chunk {
+        &mut self.function_stack.last_mut().unwrap().chunk
+    }
+    fn current_chunk_ref(&self) -> &Chunk {
+        &self.function_stack.last().unwrap().chunk
     }
 
     fn token_to_val(&mut self, token: &Token) -> Value {
@@ -333,57 +355,57 @@ impl<'a> Compiler<'a> {
     }
 
     fn make_constant(&mut self, val: Value) -> Result<u8, &'static str> {
-        let idx = self.constants.len();
-        self.constants.push(val);
+        let idx = self.current_chunk_ref().constants.len();
+        self.current_chunk_mut().constants.push(val);
         return Ok(idx.try_into().unwrap());
     }
 
     fn emit_jif(&mut self, idx: usize) {
-        self.code
+        self.current_chunk_mut().code
             .push(Instruction::from_operation(Operations::OpJumpIfFalse));
-        self.code.push(Instruction::from_instruction_idx(idx));
+        self.current_chunk_mut().code.push(Instruction::from_instruction_idx(idx));
     }
 
     fn emit_jump(&mut self, idx: usize) {
-        self.code
+        self.current_chunk_mut().code
             .push(Instruction::from_operation(Operations::OpJump));
-        self.code.push(Instruction::from_instruction_idx(idx));
+        self.current_chunk_mut().code.push(Instruction::from_instruction_idx(idx));
     }
 
     fn emit_loop(&mut self, idx: usize) {
-        self.code
+        self.current_chunk_mut().code
             .push(Instruction::from_operation(Operations::OpLoop));
-        self.code.push(Instruction::from_instruction_idx(idx));
+        self.current_chunk_mut().code.push(Instruction::from_instruction_idx(idx));
     }
 
     fn emit_constant(&mut self, token: &Token) {
         let val: Value = self.token_to_val(token);
 
         if let Ok(idx) = self.make_constant(val) {
-            self.code
+            self.current_chunk_mut().code
                 .push(Instruction::Operation(Operations::OpConstant));
-            self.code.push(Instruction::ConstantIdx(idx));
+            self.current_chunk_mut().code.push(Instruction::ConstantIdx(idx));
         } else {
             panic!("error in alocating constant");
         }
     }
 
     fn emit_get_local(&mut self, idx: usize) {
-        self.code
+        self.current_chunk_mut().code
             .push(Instruction::from_operation(Operations::OpGetLocal));
-        self.code
+        self.current_chunk_mut().code
             .push(Instruction::from_constant_idx(idx.try_into().unwrap()));
     }
 
     fn emit_set_local(&mut self, idx: usize) {
-        self.code
+        self.current_chunk_mut().code
             .push(Instruction::from_operation(Operations::OpSetLocal));
-        self.code
+        self.current_chunk_mut().code
             .push(Instruction::from_constant_idx(idx.try_into().unwrap()));
     }
 
     fn emit_operation(&mut self, operation: Operations) {
-        self.code.push(Instruction::Operation(operation));
+        self.current_chunk_mut().code.push(Instruction::Operation(operation));
     }
 
     pub fn compile(&mut self) {
@@ -410,19 +432,21 @@ impl<'a> Compiler<'a> {
     }
 
     fn end_scope(&mut self) {
-        let mut count = self.locals.len();
-        for local in self.locals.iter().rev() {
-            if local.depth < self.scope_depth {
+        let scope_depth = self.scope_depth;
+        let mut count = self.current_chunk_ref().locals.len();
+        let local_rev_iter = self.current_chunk_ref().locals.iter().rev();
+        for local in local_rev_iter {
+            if local.depth < scope_depth {
                 break;
             }
             count -= 1;
         }
-
-        for _ in 0..(self.locals.len() - count) {
+        let local_len = self.current_chunk_ref().locals.len();
+        for _ in 0..(local_len - count) {
             // pop all the locals off the stack that no longer exist
             self.emit_operation(Operations::OpPop);
         }
-        self.locals.drain(count..); // remove the locals from the locals array
+        self.current_chunk_mut().locals.drain(count..); // remove the locals from the locals array
         self.scope_depth -= 1; //return the scope
     }
 
@@ -537,7 +561,7 @@ impl<'a> Compiler<'a> {
         if !match_token(self.parser.parse_next(), Token::TkOpenBracket) {
             panic!("Expected '{{' at the beginning of a block");
         }
-        let loop_start = self.code.len() + 1;
+        let loop_start = self.current_chunk_ref().code.len() + 1;
         self.begin_scope();
         self.emit_loop(0);
         loop {
@@ -577,7 +601,7 @@ impl<'a> Compiler<'a> {
         } else {
             loop_start = self.loop_block();
         }
-        self.code[loop_start] = Instruction::from_instruction_idx(self.code.len());
+        self.current_chunk_mut().code[loop_start] = Instruction::from_instruction_idx(self.current_chunk_ref().code.len());
     }
 
     fn loop_for_statement(&mut self) -> usize {
@@ -603,18 +627,18 @@ impl<'a> Compiler<'a> {
                     "expected '{{' after the condition block in if statement"
                 );
                 self.emit_jif(0);
-                let index_of_if = self.code.len() - 1;
+                let index_of_if = self.current_chunk_ref().code.len() - 1;
                 self.block();
-                self.code[index_of_if] = Instruction::from_instruction_idx(self.code.len() + 2); // jump
+                self.current_chunk_mut().code[index_of_if] = Instruction::from_instruction_idx(self.current_chunk_ref().code.len() + 2); // jump
                                                                                                  // to the end of the if block, including the jump instruction
-                let index_of_else = self.code.len() - 1;
+                let index_of_else = self.current_chunk_ref().code.len() - 1;
                 self.emit_jump(0); // jump to the end of the else statement
                 if match_token(self.parser.peek(), Token::TkElse) {
                     self.parser.parse_next();
                     self.block();
                 }
                 // jump to the end of the condition, including the else, if applicable
-                self.code[index_of_else + 2] = Instruction::from_instruction_idx(self.code.len());
+                self.current_chunk_mut().code[index_of_else + 2] = Instruction::from_instruction_idx(self.current_chunk_ref().code.len());
             } else {
                 panic!("the condition inside of the condition block must evaluate to a boolean");
             }
@@ -628,11 +652,11 @@ impl<'a> Compiler<'a> {
         self.expression(Token::TkSemicolon);
         self.emit_operation(Operations::OpPrint);
     }
-
+    
     fn has_variable(&self, name: &str) -> Option<usize> {
-        let mut idx: usize = self.locals.len();
+        let mut idx: usize = self.current_chunk_ref().locals.len();
         let mut local_height = self.scope_depth;
-        let local_reverse_iter = self.locals.iter().rev();
+        let local_reverse_iter = self.current_chunk_ref().locals.iter().rev();
         for local in local_reverse_iter {
             // if true, this variable is in a scope seperate and not inclusive of the current
             // scope
@@ -659,17 +683,55 @@ impl<'a> Compiler<'a> {
                 name
             );
         }
-        if match_token(self.parser.parse_next(), Token::TkEquals) {
-            let return_type = self.expression(Token::TkSemicolon);
-            if var_type != return_type {
-                panic!("cannot assign type {:?} to {:?}", var_type, return_type);
+        match self.parser.parse_next().unwrap() {
+            Token::TkEquals => {
+                let return_type = self.expression(Token::TkSemicolon);
+                if var_type != return_type {
+                    panic!("cannot assign type {:?} to {:?}", var_type, return_type);
+                }
+                let local = Local::new(String::from(name), self.scope_depth, var_type);
+                self.current_chunk_mut().locals.push(local);
             }
-            let local = Local::new(String::from(name), self.scope_depth, var_type);
-            self.locals.push(local);
-        } else {
-            panic!("expected an equals sign to declare the variable");
-            //TODO: allow uninitialized vars?
+            Token::TkOpenParen => {
+                let function_local = Local::new(
+                    String::from(name),
+                    self.scope_depth,
+                    ValType::ValFunctionType,
+                );
+                self.current_chunk_mut().locals.push(function_local);
+                //TODO:: function needs to know its own name?
+                let mut function = ObjFunction::new(crate::object::FunctionType::Function);
+                let parameters: Vec<ValType> = self.parse_function_params(&mut function);
+                function.set_params(parameters);
+            }
+            _ => todo!(),
         }
+    }
+
+    fn parse_function_params(&mut self, function: &mut ObjFunction) -> Vec<ValType> {
+        let mut parameters = Vec::new();
+        loop {
+            match self.parser.parse_next() {
+                Some(token) => match token {
+                    Token::TkCloseParen => break,
+                    Token::TkTypeIdent => {
+                        parameters.push(ValType::from_str(self.parser.get_curr_slice()));
+                        if !match_token(self.parser.parse_next(), Token::TkIdentifier) {
+                            panic!("expected the name of an identifier");
+                        }
+                        let local = Local::new(
+                            self.parser.get_curr_slice().to_string(),
+                            0,
+                            *function.parameters.last().unwrap(),
+                        );
+                        self.current_chunk_mut().locals.push(local);
+                    }
+                    _ => (),
+                },
+                None => panic!("expected a function argument or a close parens ')'"),
+            }
+        }
+        parameters
     }
 
     pub fn expression_statement(&mut self) {
@@ -677,7 +739,8 @@ impl<'a> Compiler<'a> {
 
         // for set expression, we already the stack to move the value of the expression into the
         // local slot
-        if &self.code[self.code.len() - 2] == &Instruction::from_operation(Operations::OpSetLocal) {
+        let idx = self.current_chunk_ref().code.len() - 2;
+        if &self.current_chunk_mut().code[idx] == &Instruction::from_operation(Operations::OpSetLocal) {
             return;
         }
 
@@ -686,14 +749,15 @@ impl<'a> Compiler<'a> {
     }
 
     fn assignment(&mut self) -> ValType {
-        let local_idx = self.has_variable(self.parser.get_curr_slice()).unwrap();
+        let var_name = self.parser.get_curr_slice();
+        let local_idx = self.has_variable(var_name).unwrap();
         self.parser.parse_next(); // consume the equals sign
         let return_type: ValType = self.expression(Token::TkSemicolon);
         println!("returned from expression with {:?}", return_type);
         assert_eq!(
-            return_type, self.locals[local_idx].val_type,
+            return_type, self.current_chunk_ref().locals[local_idx].val_type,
             "cannot set a variable of type {:?} to {:?}",
-            self.locals[local_idx].val_type, return_type
+            self.current_chunk_ref().locals[local_idx].val_type, return_type
         );
         self.emit_set_local(local_idx);
         return_type
@@ -885,10 +949,10 @@ impl<'a> Compiler<'a> {
             let ident = self.parser.get_curr_slice();
             let idx = self.has_variable(ident).unwrap();
             self.emit_get_local(idx);
-            push_type(self.locals[idx].val_type, operand_type_stack);
+            push_type(self.current_chunk_ref().locals[idx].val_type, operand_type_stack);
         } else {
             self.emit_constant(token);
-            let new_val_ref = self.constants.last().unwrap();
+            let new_val_ref = self.current_chunk_ref().constants.last().unwrap();
             push_type_of_val(new_val_ref, operand_type_stack);
         }
     }
@@ -1014,14 +1078,14 @@ mod tests {
         compiler.expression(Token::TkSemicolon);
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0)
             ]
         );
 
-        assert_eq!(&compiler.constants, &vec![Value::from_num(123)]);
+        assert_eq!(&compiler.current_chunk_ref().constants, &vec![Value::from_num(123)]);
     }
 
     #[test]
@@ -1031,7 +1095,7 @@ mod tests {
         compiler.expression(Token::TkEof);
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1045,7 +1109,7 @@ mod tests {
         );
 
         assert_eq!(
-            &compiler.constants,
+            &compiler.current_chunk_ref().constants,
             &vec![Value::from_num(1), Value::from_num(2), Value::from_num(3)]
         );
     }
@@ -1055,14 +1119,14 @@ mod tests {
         let mut compiler: Compiler = Compiler::new(code);
         compiler.expression(Token::TkEof);
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0)
             ],
         );
 
-        assert_eq!(&compiler.constants, &vec![Value::from_bool(true)])
+        assert_eq!(&compiler.current_chunk_ref().constants, &vec![Value::from_bool(true)])
     }
 
     #[test]
@@ -1071,7 +1135,7 @@ mod tests {
         let mut compiler: Compiler = Compiler::new(code);
         compiler.expression(Token::TkEof);
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1088,7 +1152,7 @@ mod tests {
         );
 
         assert_eq!(
-            &compiler.constants,
+            &compiler.current_chunk_ref().constants,
             &vec![
                 Value::from_bool(true),
                 Value::from_bool(false),
@@ -1123,14 +1187,14 @@ mod tests {
         compiler.expression(Token::TkEof);
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0)
             ],
         );
 
-        assert_eq!(&compiler.constants, &vec![Value::from_string("hello"),]);
+        assert_eq!(&compiler.current_chunk_ref().constants, &vec![Value::from_string("hello"),]);
     }
 
     #[test]
@@ -1148,7 +1212,7 @@ mod tests {
         compiler.expression(Token::TkEof);
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1159,7 +1223,7 @@ mod tests {
         );
 
         assert_eq!(
-            &compiler.constants,
+            &compiler.current_chunk_ref().constants,
             &vec![Value::from_string("hello"), Value::from_string(" world")]
         );
     }
@@ -1171,14 +1235,14 @@ mod tests {
         compiler.statement();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0)
             ]
         );
 
-        assert_eq!(&compiler.constants, &vec![Value::from_num(1)]);
+        assert_eq!(&compiler.current_chunk_ref().constants, &vec![Value::from_num(1)]);
     }
 
     #[test]
@@ -1189,7 +1253,7 @@ mod tests {
         compiler.statement();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1199,7 +1263,7 @@ mod tests {
         );
 
         assert_eq!(
-            &compiler.constants,
+            &compiler.current_chunk_ref().constants,
             &vec![Value::from_num(1), Value::from_string("hello")]
         );
     }
@@ -1212,7 +1276,7 @@ mod tests {
         compiler.statement();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1226,7 +1290,7 @@ mod tests {
         );
 
         assert_eq!(
-            &compiler.constants,
+            &compiler.current_chunk_ref().constants,
             &vec![Value::from_num(1), Value::from_num(2)]
         );
     }
@@ -1239,7 +1303,7 @@ mod tests {
         compiler.statement();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1260,7 +1324,7 @@ mod tests {
         compiler.statement();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1283,7 +1347,7 @@ mod tests {
         compiler.statement();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1336,7 +1400,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1350,7 +1414,7 @@ mod tests {
         );
 
         assert_eq!(
-            &compiler.constants,
+            &compiler.current_chunk_ref().constants,
             &vec![Value::from_num(1), Value::from_string("hello")]
         );
     }
@@ -1363,7 +1427,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1393,7 +1457,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1416,7 +1480,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1449,7 +1513,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1475,7 +1539,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1503,7 +1567,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpLoop),
                 Instruction::from_instruction_idx(7),
@@ -1523,7 +1587,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpLoop),
                 Instruction::from_instruction_idx(8),
@@ -1544,7 +1608,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpLoop),
                 Instruction::from_instruction_idx(11),
@@ -1568,7 +1632,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1598,7 +1662,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1613,7 +1677,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1657,7 +1721,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1688,7 +1752,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
@@ -1705,7 +1769,7 @@ mod tests {
         compiler.compile();
 
         assert_eq!(
-            &compiler.code,
+            &compiler.current_chunk_ref().code,
             &vec![
                 Instruction::from_operation(OpConstant),
                 Instruction::from_constant_idx(0),
