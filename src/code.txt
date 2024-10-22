@@ -1,3 +1,1 @@
-loop for (1 + (2 + 4 / 2)) {
-	print "hello";
-}
+print 1 + 1;

@@ -26,7 +26,7 @@ impl<'a> Vm<'a> {
     pub fn new(code: &'a String) -> Self {
         Self {
             code_text: code,
-            compiler: Compiler::new(&code),
+            compiler: Compiler::new(code),
             stack: Vec::with_capacity(256),
         }
     }
