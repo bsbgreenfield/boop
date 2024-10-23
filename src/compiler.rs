@@ -1,16 +1,14 @@
 use core::fmt;
 use core::panic;
-use std::borrow::BorrowMut;
 use std::collections::HashSet;
 use std::rc::Rc;
-use std::usize;
 
 use crate::object::ObjFunction;
 use crate::object::ObjString;
 use crate::value;
 use crate::value::ValType;
 use crate::{
-    parser::{self, Parser, Token},
+    parser::{Parser, Token},
     value::{ValData, Value},
 };
 
@@ -131,7 +129,7 @@ fn prec_of(operation: &Operations) -> Precedence {
     }
 }
 
-fn top_of<T>(stack: &Vec<T>) -> Option<&T> {
+fn top_of<T>(stack: &[T]) -> Option<&T> {
     let length = stack.len();
     if length == 0 {
         None
@@ -141,17 +139,11 @@ fn top_of<T>(stack: &Vec<T>) -> Option<&T> {
 }
 
 fn is_group_start(token: &Token) -> bool {
-    match token {
-        Token::TkOpenParen => true,
-        _ => false,
-    }
+    matches!(token, Token::TkOpenParen)
 }
 
 fn is_group_end(token: &Token) -> bool {
-    match token {
-        Token::TkCloseParen => true,
-        _ => false,
-    }
+    matches!(token, Token::TkCloseParen)
 }
 
 fn can_add_or_subtract(
@@ -166,7 +158,7 @@ fn can_add_or_subtract(
         push_type(ValType::ValStringType, operand_type_stack);
         return true;
     }
-    return false;
+    false
 }
 
 fn can_multiply_or_divide(
@@ -178,7 +170,7 @@ fn can_multiply_or_divide(
         push_type(ValType::ValNumType, operand_type_stack);
         return true;
     }
-    return false;
+    false
 }
 
 fn can_and_or_or(
@@ -190,7 +182,7 @@ fn can_and_or_or(
         push_type(ValType::ValBoolType, operand_type_stack);
         return true;
     }
-    return false;
+    false
 }
 
 fn can_compare(
@@ -203,7 +195,7 @@ fn can_compare(
         push_type(ValType::ValBoolType, operand_type_stack);
         return true;
     }
-    return false;
+    false
 }
 
 fn push_type_of_val(val: &Value, operand_type_stack: &mut Vec<ValType>) {
@@ -218,7 +210,7 @@ fn match_token(maybe_token: Option<Token>, expected: Token) -> bool {
     if let Some(token) = maybe_token {
         return token == expected;
     }
-    return false;
+    false
 }
 
 fn match_val_type(val_ident: &str) -> ValType {
@@ -271,7 +263,7 @@ pub struct Compiler<'a> {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new(code: &'a String) -> Self {
+    pub fn new(code: &'a str) -> Self {
         let mut types = HashSet::new();
         types.insert(String::from("int"));
         types.insert(String::from("bool"));
@@ -282,9 +274,8 @@ impl<'a> Compiler<'a> {
             types,
             scope_depth: 0,
         }
-
     }
-    
+
     fn current_chunk_mut(&mut self) -> &mut Chunk {
         &mut self.function_stack.last_mut().unwrap().chunk
     }
@@ -325,7 +316,7 @@ impl<'a> Compiler<'a> {
     fn token_to_operator(&self, token: &Token, operand_type: &ValType) -> Operations {
         use Operations::*;
         use Token::*;
-        return match token {
+        match token {
             TkPlus => {
                 if operand_type == &ValType::ValStringType {
                     OpConcat
@@ -351,61 +342,79 @@ impl<'a> Compiler<'a> {
             _ => {
                 panic!("Expected an operator token, got {:?}", token);
             }
-        };
+        }
     }
 
     fn make_constant(&mut self, val: Value) -> Result<u8, &'static str> {
         let idx = self.current_chunk_ref().constants.len();
         self.current_chunk_mut().constants.push(val);
-        return Ok(idx.try_into().unwrap());
+        Ok(idx.try_into().unwrap())
     }
 
     fn emit_jif(&mut self, idx: usize) {
-        self.current_chunk_mut().code
+        self.current_chunk_mut()
+            .code
             .push(Instruction::from_operation(Operations::OpJumpIfFalse));
-        self.current_chunk_mut().code.push(Instruction::from_instruction_idx(idx));
+        self.current_chunk_mut()
+            .code
+            .push(Instruction::from_instruction_idx(idx));
     }
 
     fn emit_jump(&mut self, idx: usize) {
-        self.current_chunk_mut().code
+        self.current_chunk_mut()
+            .code
             .push(Instruction::from_operation(Operations::OpJump));
-        self.current_chunk_mut().code.push(Instruction::from_instruction_idx(idx));
+        self.current_chunk_mut()
+            .code
+            .push(Instruction::from_instruction_idx(idx));
     }
 
     fn emit_loop(&mut self, idx: usize) {
-        self.current_chunk_mut().code
+        self.current_chunk_mut()
+            .code
             .push(Instruction::from_operation(Operations::OpLoop));
-        self.current_chunk_mut().code.push(Instruction::from_instruction_idx(idx));
+        self.current_chunk_mut()
+            .code
+            .push(Instruction::from_instruction_idx(idx));
     }
 
     fn emit_constant(&mut self, token: &Token) {
         let val: Value = self.token_to_val(token);
 
         if let Ok(idx) = self.make_constant(val) {
-            self.current_chunk_mut().code
+            self.current_chunk_mut()
+                .code
                 .push(Instruction::Operation(Operations::OpConstant));
-            self.current_chunk_mut().code.push(Instruction::ConstantIdx(idx));
+            self.current_chunk_mut()
+                .code
+                .push(Instruction::ConstantIdx(idx));
         } else {
             panic!("error in alocating constant");
         }
     }
 
     fn emit_get_local(&mut self, idx: usize) {
-        self.current_chunk_mut().code
+        self.current_chunk_mut()
+            .code
             .push(Instruction::from_operation(Operations::OpGetLocal));
-        self.current_chunk_mut().code
+        self.current_chunk_mut()
+            .code
             .push(Instruction::from_constant_idx(idx.try_into().unwrap()));
     }
 
     fn emit_set_local(&mut self, idx: usize) {
-        self.current_chunk_mut().code
+        self.current_chunk_mut()
+            .code
             .push(Instruction::from_operation(Operations::OpSetLocal));
-        self.current_chunk_mut().code
+        self.current_chunk_mut()
+            .code
             .push(Instruction::from_constant_idx(idx.try_into().unwrap()));
     }
 
     fn emit_operation(&mut self, operation: Operations) {
-        self.current_chunk_mut().code.push(Instruction::Operation(operation));
+        self.current_chunk_mut()
+            .code
+            .push(Instruction::Operation(operation));
     }
 
     pub fn compile(&mut self) {
@@ -532,8 +541,6 @@ impl<'a> Compiler<'a> {
                 | Token::TkEof
                 | Token::TkOpenBracket
                 | Token::TkCloseBracket
-                | Token::TkOpenParen
-                | Token::TkBang
                 | Token::TkNotEquals
                 | Token::TkLessEquals
                 | Token::TkGreaterEquals
@@ -541,9 +548,15 @@ impl<'a> Compiler<'a> {
                     panic!("expected a statement or expression");
                 }
             }
+
+            //TODO: a more elegant way of searching for a function dec, which doesnt require a
+            //semicolon?
+            if self.current_chunk_ref().constants.last().unwrap().val_type == ValType::ValFunctionType {
+                return true;
+            }
             if let Some(maybe_semicolon) = self.parser.parse_next() {
                 match maybe_semicolon {
-                    Token::TkSemicolon => return true,
+                    Token::TkSemicolon => true,
                     _ => panic!(
                         "expected a semicolon at the end of a statement, found {:?}",
                         maybe_semicolon
@@ -553,21 +566,22 @@ impl<'a> Compiler<'a> {
                 panic!("expected semicolon, found EOF"); // EOF expected semicolon
             }
         } else {
-            return false; // EOF no error
+            false // EOF no error
         }
     }
 
     fn b_loop(&mut self) -> usize {
+        // parse open bracket
         if !match_token(self.parser.parse_next(), Token::TkOpenBracket) {
             panic!("Expected '{{' at the beginning of a block");
         }
+        // store the beginning index of the loop
         let loop_start = self.current_chunk_ref().code.len() + 1;
         self.begin_scope();
         self.emit_loop(0);
         loop {
             if let Some(token) = self.parser.peek() {
                 match token {
-                    //TODO: make a new instruction for instr idx instead of constant idx
                     Token::TkOpenBracket => self.block(),
                     Token::TkCloseBracket => {
                         self.parser.parse_next();
@@ -583,14 +597,16 @@ impl<'a> Compiler<'a> {
             }
         }
         self.end_scope();
-        return loop_start;
+
+        loop_start
     }
 
     fn loop_block(&mut self) -> usize {
         // for regular loops, emit instructions for loop, followed by jump to start
         let loop_start = self.b_loop();
         self.emit_jump(loop_start);
-        return loop_start;
+
+        loop_start
     }
 
     fn loop_statement(&mut self) {
@@ -601,7 +617,10 @@ impl<'a> Compiler<'a> {
         } else {
             loop_start = self.loop_block();
         }
-        self.current_chunk_mut().code[loop_start] = Instruction::from_instruction_idx(self.current_chunk_ref().code.len());
+
+        // update the loop instruction to contain the end of the loop
+        self.current_chunk_mut().code[loop_start] =
+            Instruction::from_instruction_idx(self.current_chunk_ref().code.len());
     }
 
     fn loop_for_statement(&mut self) -> usize {
@@ -616,6 +635,7 @@ impl<'a> Compiler<'a> {
 
     fn if_statement(&mut self) {
         self.parser.parse_next(); // consume the 'if'
+        // parse the condition
         if match_token(self.parser.parse_next(), Token::TkOpenParen) {
             if self.expression(Token::TkCloseParen) == ValType::ValBoolType {
                 assert!(
@@ -626,11 +646,19 @@ impl<'a> Compiler<'a> {
                     match_token(self.parser.peek(), Token::TkOpenBracket),
                     "expected '{{' after the condition block in if statement"
                 );
+                // jump instruction for the end of the if statement
+                // then store this index in order to update the instruction once we know the ending
+                // index 
                 self.emit_jif(0);
                 let index_of_if = self.current_chunk_ref().code.len() - 1;
+
+                // compile if block
                 self.block();
-                self.current_chunk_mut().code[index_of_if] = Instruction::from_instruction_idx(self.current_chunk_ref().code.len() + 2); // jump
-                                                                                                 // to the end of the if block, including the jump instruction
+                
+
+                self.current_chunk_mut().code[index_of_if] =
+                    Instruction::from_instruction_idx(self.current_chunk_ref().code.len() + 2); // jump
+                                                                                                // to the end of the if block, including the jump instruction
                 let index_of_else = self.current_chunk_ref().code.len() - 1;
                 self.emit_jump(0); // jump to the end of the else statement
                 if match_token(self.parser.peek(), Token::TkElse) {
@@ -638,7 +666,8 @@ impl<'a> Compiler<'a> {
                     self.block();
                 }
                 // jump to the end of the condition, including the else, if applicable
-                self.current_chunk_mut().code[index_of_else + 2] = Instruction::from_instruction_idx(self.current_chunk_ref().code.len());
+                self.current_chunk_mut().code[index_of_else + 2] =
+                    Instruction::from_instruction_idx(self.current_chunk_ref().code.len());
             } else {
                 panic!("the condition inside of the condition block must evaluate to a boolean");
             }
@@ -652,7 +681,7 @@ impl<'a> Compiler<'a> {
         self.expression(Token::TkSemicolon);
         self.emit_operation(Operations::OpPrint);
     }
-    
+
     fn has_variable(&self, name: &str) -> Option<usize> {
         let mut idx: usize = self.current_chunk_ref().locals.len();
         let mut local_height = self.scope_depth;
@@ -672,41 +701,52 @@ impl<'a> Compiler<'a> {
         None
     }
 
-    pub fn variable_declaration(&mut self) -> () {
+    pub fn variable_declaration(&mut self) {
         self.parser.parse_next(); // type ident
         let var_type = match_val_type(self.parser.get_curr_slice()); // grab type name
         self.parser.parse_next(); // identifier
         let name = self.parser.get_curr_slice().to_owned(); // grab indent name
-        if let Some(_) = self.has_variable(&name) {
+        if self.has_variable(&name).is_some() {
             panic!(
                 "A variable with the name {} already exists in this scope",
                 name
             );
         }
-        match self.parser.parse_next().unwrap() {
+        // if its an equals sign, this is a new variable
+        // if its a parentheses, this is a function declaration
+        match self.parser.parse_next().unwrap() { 
             Token::TkEquals => {
                 let return_type = self.expression(Token::TkSemicolon);
                 if var_type != return_type {
                     panic!("cannot assign type {:?} to {:?}", var_type, return_type);
                 }
-                let local = Local::new(String::from(name), self.scope_depth, var_type);
+                let local = Local::new(name, self.scope_depth, var_type);
                 self.current_chunk_mut().locals.push(local);
             }
             Token::TkOpenParen => {
-                let function_local = Local::new(
-                    String::from(name),
-                    self.scope_depth,
-                    ValType::ValFunctionType,
-                );
+                let function_local = Local::new(name, self.scope_depth, ValType::ValFunctionType);
                 self.current_chunk_mut().locals.push(function_local);
                 //TODO:: function needs to know its own name?
                 let mut function = ObjFunction::new(crate::object::FunctionType::Function);
                 let parameters: Vec<ValType> = self.parse_function_params(&mut function);
                 function.set_params(parameters);
+
+                // compile the function, and once done, put it in this the enclosing function's
+                // constants table
+                function = self.compile_function(function);
+                let _ = self.make_constant(Value { val_type: ValType::ValFunctionType, data: ValData::ValObj(Rc::new(function))});
             }
-            _ => todo!(),
+            _ => panic!("Expected a '=' or an open parentheses"),
         }
     }
+    
+    fn compile_function(&mut self, new_function: ObjFunction) -> ObjFunction{
+        // takes a function and gives it back 
+        self.function_stack.push(new_function);
+        self.block();
+        self.function_stack.pop().unwrap()
+    }
+
 
     fn parse_function_params(&mut self, function: &mut ObjFunction) -> Vec<ValType> {
         let mut parameters = Vec::new();
@@ -722,7 +762,7 @@ impl<'a> Compiler<'a> {
                         let local = Local::new(
                             self.parser.get_curr_slice().to_string(),
                             0,
-                            *function.parameters.last().unwrap(),
+                            *parameters.last().unwrap(),
                         );
                         self.current_chunk_mut().locals.push(local);
                     }
@@ -740,7 +780,9 @@ impl<'a> Compiler<'a> {
         // for set expression, we already the stack to move the value of the expression into the
         // local slot
         let idx = self.current_chunk_ref().code.len() - 2;
-        if &self.current_chunk_mut().code[idx] == &Instruction::from_operation(Operations::OpSetLocal) {
+        if self.current_chunk_mut().code[idx]
+            == Instruction::from_operation(Operations::OpSetLocal)
+        {
             return;
         }
 
@@ -755,9 +797,11 @@ impl<'a> Compiler<'a> {
         let return_type: ValType = self.expression(Token::TkSemicolon);
         println!("returned from expression with {:?}", return_type);
         assert_eq!(
-            return_type, self.current_chunk_ref().locals[local_idx].val_type,
+            return_type,
+            self.current_chunk_ref().locals[local_idx].val_type,
             "cannot set a variable of type {:?} to {:?}",
-            self.current_chunk_ref().locals[local_idx].val_type, return_type
+            self.current_chunk_ref().locals[local_idx].val_type,
+            return_type
         );
         self.emit_set_local(local_idx);
         return_type
@@ -770,13 +814,16 @@ impl<'a> Compiler<'a> {
     ) -> ExprResult {
         // the result of parsing the first token can be three distinct things.
         //
-        // 1. a unary prefix operator -> just add the op to the stack.
+        // 1. a unary prefix operator -> just add the op to the stack
+        //    [ExprResult::ParsedOperator(unary)].
         //
-        // 2. constant followed by an equals sign -> reroute to assignment
+        // 2. constant followed by an equals sign -> reroute to assignment [ExprResult::assignment]
         //
-        // 3. constant followed by end token -> compile constant and then exit
+        // 3. constant followed by end token -> compile constant and then exit [ExprResult::Done]
         //
-        //4. beginning of a grouping -> push OpGrouping
+        //4. beginning of a grouping -> push OpGrouping [ExprResult::ParsedOperator(grouping)]
+        //
+        //5. operand followed by an operator [ExprResult::ParsedOperator]
         if let Some(first_token) = self.parser.parse_next() {
             match first_token {
                 Token::TkBang => ExprResult::ParsedOperator(Operations::OpNot),
@@ -786,12 +833,12 @@ impl<'a> Compiler<'a> {
                 | Token::TkTrue
                 | Token::TkFalse => {
                     if match_token(self.parser.peek(), Token::TkEquals) {
-                        return ExprResult::Assignment(self.assignment());
+                        ExprResult::Assignment(self.assignment())
                     } else {
                         self.compile_operand(&first_token, operand_type_stack);
                         // check for the end of the expression.
                         if match_token(self.parser.peek(), expected_end_token) {
-                            return ExprResult::Done(*operand_type_stack.get(0).unwrap());
+                            ExprResult::Done(*operand_type_stack.first().unwrap())
                         } else {
                             ExprResult::ParsedOperand
                         }
@@ -838,7 +885,7 @@ impl<'a> Compiler<'a> {
                         self.dump_all(operator_stack, operand_type_stack);
                         assert_eq!(operand_type_stack.len(), 1);
                         assert_eq!(operator_stack.len(), 0);
-                        return Some(ExprResult::Done(*operand_type_stack.get(0).unwrap()));
+                        return Some(ExprResult::Done(*operand_type_stack.first().unwrap()));
                     }
                 } else {
                     if !did_close {
@@ -931,15 +978,15 @@ impl<'a> Compiler<'a> {
         }
         assert_eq!(operand_type_stack.len(), 1);
         assert_eq!(operator_stack.len(), 0);
-        return *operand_type_stack.get(0).unwrap();
+        return *operand_type_stack.first().unwrap();
     }
 
-    fn assert_is_constant(&self, token: &Token) -> () {
+    fn assert_is_constant(&self, token: &Token) {
         use Token::*;
-        assert!(match token {
-            TkNum | TkString | TkTrue | TkFalse | TkIdentifier => true,
-            _ => false,
-        })
+        assert!(matches!(
+            token,
+            TkNum | TkString | TkTrue | TkFalse | TkIdentifier
+        ));
     }
 
     fn compile_operand(&mut self, token: &Token, operand_type_stack: &mut Vec<ValType>) {
@@ -949,7 +996,10 @@ impl<'a> Compiler<'a> {
             let ident = self.parser.get_curr_slice();
             let idx = self.has_variable(ident).unwrap();
             self.emit_get_local(idx);
-            push_type(self.current_chunk_ref().locals[idx].val_type, operand_type_stack);
+            push_type(
+                self.current_chunk_ref().locals[idx].val_type,
+                operand_type_stack,
+            );
         } else {
             self.emit_constant(token);
             let new_val_ref = self.current_chunk_ref().constants.last().unwrap();
@@ -959,7 +1009,7 @@ impl<'a> Compiler<'a> {
 
     fn dump_all(&mut self, stack: &mut Vec<Operations>, operand_type_stack: &mut Vec<ValType>) {
         loop {
-            if !self.dump_stack(stack, operand_type_stack, false) || stack.len() == 0 {
+            if !self.dump_stack(stack, operand_type_stack, false) || stack.is_empty() {
                 break;
             }
         }
@@ -971,11 +1021,11 @@ impl<'a> Compiler<'a> {
         operand_type_stack: &mut Vec<ValType>,
         dump_group: bool,
     ) -> bool {
-        if stack.len() == 0 {
+        if stack.is_empty() {
             return false;
         }
         // dump until we hit a grouing operation, then pop that and exit
-        while stack.len() > 0 {
+        while !stack.is_empty() {
             if let Some(operation) = stack.pop() {
                 match operation {
                     Operations::OpGrouping => {
@@ -1062,7 +1112,7 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
-        return false;
+        false
     }
 }
 
@@ -1085,7 +1135,10 @@ mod tests {
             ]
         );
 
-        assert_eq!(&compiler.current_chunk_ref().constants, &vec![Value::from_num(123)]);
+        assert_eq!(
+            &compiler.current_chunk_ref().constants,
+            &vec![Value::from_num(123)]
+        );
     }
 
     #[test]
@@ -1126,7 +1179,10 @@ mod tests {
             ],
         );
 
-        assert_eq!(&compiler.current_chunk_ref().constants, &vec![Value::from_bool(true)])
+        assert_eq!(
+            &compiler.current_chunk_ref().constants,
+            &vec![Value::from_bool(true)]
+        )
     }
 
     #[test]
@@ -1194,7 +1250,10 @@ mod tests {
             ],
         );
 
-        assert_eq!(&compiler.current_chunk_ref().constants, &vec![Value::from_string("hello"),]);
+        assert_eq!(
+            &compiler.current_chunk_ref().constants,
+            &vec![Value::from_string("hello"),]
+        );
     }
 
     #[test]
@@ -1242,7 +1301,10 @@ mod tests {
             ]
         );
 
-        assert_eq!(&compiler.current_chunk_ref().constants, &vec![Value::from_num(1)]);
+        assert_eq!(
+            &compiler.current_chunk_ref().constants,
+            &vec![Value::from_num(1)]
+        );
     }
 
     #[test]

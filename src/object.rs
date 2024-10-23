@@ -78,7 +78,7 @@ impl ObjFunction {
         }
     }
 
-    pub fn set_params(&mut self, parameters: Vec<ValType>) -> () {
+    pub fn set_params(&mut self, parameters: Vec<ValType>){
         self.parameters = parameters;
     }
 }

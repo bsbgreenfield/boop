@@ -40,9 +40,9 @@ fn generate_type_hash() -> HashSet<&'static str> {
     result
 }
 
-static KEYWORD_HASH: LazyLock<HashMap<&str, Token>> = LazyLock::new(|| generate_keyword_hash());
+static KEYWORD_HASH: LazyLock<HashMap<&str, Token>> = LazyLock::new(generate_keyword_hash);
 
-static TYPE_HASH: LazyLock<HashSet<&str>> = LazyLock::new(|| generate_type_hash());
+static TYPE_HASH: LazyLock<HashSet<&str>> = LazyLock::new(generate_type_hash);
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Token {
