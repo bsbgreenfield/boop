@@ -125,7 +125,7 @@ fn debug_print_obj(f: &mut std::fmt::Formatter<'_>, obj: &Rc<dyn Object>) -> std
     match obj.get_type() {
         crate::object::ObjType::ObjStringType => {
             let string = obj.get_string();
-            return write!(f, "{string}");
+            write!(f, "{string}")
         }
         _ => write!(f, "ValObj"),
     }
@@ -139,26 +139,26 @@ pub struct Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         if self.val_type != other.val_type {
-            return false;
+            false
         } else {
             match &self.data {
                 ValData::ValNum(num) => match &other.data {
                     ValData::ValNum(other_num) => {
-                        return num == other_num;
+                        num == other_num
                     }
-                    _ => return false,
+                    _ => false,
                 },
                 ValData::ValBool(boolean) => match other.data {
                     ValData::ValBool(other_boolean) => {
-                        return *boolean == other_boolean;
+                        *boolean == other_boolean
                     }
-                    _ => return false,
+                    _ => false,
                 },
                 ValData::ValObj(box_of_object) => match &other.data {
                     ValData::ValObj(other_box_of_object) => {
-                        return box_of_object.get_type() == other_box_of_object.get_type();
+                        box_of_object.get_type() == other_box_of_object.get_type()
                     }
-                    _ => return false,
+                    _ => false,
                 },
             }
         }

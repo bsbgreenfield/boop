@@ -1,11 +1,10 @@
 use core::panic;
-use std::{rc::Rc, usize};
-
+use std::rc::Rc;
 use crate::{
-    compiler::{Compiler, Instruction, Operations},
     object::ObjString,
     value::{ValData, Value},
 };
+use crate::compiler::{Operations, Instruction, Compiler};
 
 pub enum RuntimeError {
     BoopError,
@@ -26,7 +25,7 @@ impl<'a> Vm<'a> {
     pub fn new(code: &'a String) -> Self {
         Self {
             code_text: code,
-            compiler: Compiler::new(&code),
+            compiler: Compiler::new(code),
             stack: Vec::with_capacity(256),
         }
     }
@@ -37,6 +36,7 @@ impl<'a> Vm<'a> {
         stack: &mut Vec<ValData>,
         offset: usize,
     ) -> InterpretResult {
+        use Operations::*;
         let mut breakpoints: Vec<(usize, usize)> = Vec::new();
         let mut idx = 0;
         loop {
@@ -44,9 +44,8 @@ impl<'a> Vm<'a> {
                 return InterpretResult::Done;
             }
             let current_instruction = &instructions[idx];
-            use Operations::*;
 
-            debug_vm(&instructions, idx, &stack);
+            debug_vm(instructions, idx, stack);
             match current_instruction {
                 Instruction::Operation(op) => match op {
                     Operations::OpConstant => {
@@ -227,7 +226,7 @@ fn get_instruction_idx(idx: &mut usize, instructions: &[Instruction], offset: us
     }
 }
 
-fn debug_instructions(instructions: &Vec<Instruction>) {
+fn debug_instructions(instructions: &[Instruction]) {
     println!("_______________________________");
     for (idx, instruction) in instructions.iter().enumerate() {
         println!("{}: {:?}", idx, instruction);
@@ -236,7 +235,7 @@ fn debug_instructions(instructions: &Vec<Instruction>) {
 }
 
 fn debug_vm(instructions: &[Instruction], instr_idx: usize, stack: &Vec<ValData>) {
-    use Operations::*;
+   use Operations::*; 
     let instruction = &instructions[instr_idx];
     let next_instruction;
     if instr_idx > instructions.len() - 2 {
@@ -252,8 +251,8 @@ fn debug_vm(instructions: &[Instruction], instr_idx: usize, stack: &Vec<ValData>
         },
         None => 0,
     };
-    match instruction {
-        Instruction::Operation(op) => match op {
+        if let Instruction::Operation(op) = instruction {
+        match op {
             OpConstant => {
                 print!("OP CONSTANT: {:?}      |     ", idx);
             }
@@ -333,9 +332,9 @@ fn debug_vm(instructions: &[Instruction], instr_idx: usize, stack: &Vec<ValData>
                     "OP_LOOP_FOR {:?}       |     ",
                     stack.last().unwrap().unwrap_int()
                 );
-            }
-        },
-        _ => (),
-    }
+            },
+        }
+
+    }          
     println!("{:?}", stack);
 }

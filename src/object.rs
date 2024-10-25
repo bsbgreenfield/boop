@@ -1,8 +1,7 @@
 #![allow(unused)]
 use core::panic;
-
+use crate::compiler::*;
 use crate::{
-    compiler::{Chunk, Instruction},
     value::{ValType, Value},
 };
 

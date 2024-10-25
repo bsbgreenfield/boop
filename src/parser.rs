@@ -263,7 +263,7 @@ impl<'a> Parser<'a> {
         match maybe_token {
             Some(token) => match token {
                 Token::TkIdentifier => println!("{:?}: {}", token, self.get_curr_slice()),
-                _ => println!("{:?}", token),
+                _ => () //println!("{:?}", token),
             },
 
             None => println!("EOF"),
