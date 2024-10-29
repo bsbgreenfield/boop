@@ -9,9 +9,26 @@ pub enum ValType {
     ValNumType,
     ValBoolType,
     ValStringType,
+    ValFunctionType,
+    ValVoidType
+}
+
+
+// TODO: make this more efficient by either making another hash set, 
+// implementing an incremental search, or hardcoding these valtypes in the Tokens.
+impl ValType {
+    pub fn from_str(type_lexeme: &str) -> Self {
+        match type_lexeme {
+           "String" => ValType::ValStringType,
+           "int" => ValType::ValNumType,
+           "bool" => ValType::ValBoolType,
+           _ => panic!("unimplemented"),
+        }
+    }
 }
 
 pub enum ValData {
+    Void,
     ValNum(i32),
     ValBool(bool),
     ValObj(Rc<dyn Object>), // this will almost certainly have to be an RC to account for
@@ -47,6 +64,7 @@ impl ValData {
 
     pub fn print_value(&self) {
         match self {
+            ValData::Void => println!("void"),
             ValData::ValNum(num) => println!("{num}"),
             ValData::ValBool(boolean) => println!("{boolean}"),
             ValData::ValObj(obj) => match obj.get_type() {
@@ -60,6 +78,7 @@ impl ValData {
 
     pub fn compare_value(&self, other: &Self) -> bool {
         match self {
+            ValData::Void => false,
             ValData::ValNum(num) => *num == other.unwrap_int(),
             ValData::ValBool(boolean) => *boolean == other.unwrap_bool(),
             ValData::ValObj(obj) => Self::compare_objs(obj, other),
@@ -89,6 +108,7 @@ impl ValData {
 impl Clone for ValData {
     fn clone(&self) -> Self {
         match self {
+            ValData::Void => ValData::Void,
             ValData::ValNum(num) => ValData::ValNum(*num),
             ValData::ValBool(boolean) => ValData::ValBool(*boolean),
             ValData::ValObj(obj) => ValData::ValObj(Rc::clone(obj)),
@@ -99,6 +119,7 @@ impl Clone for ValData {
 impl Debug for ValData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ValData::Void => write!(f, "void"),
             ValData::ValNum(num) => write!(f, "{num}"),
             ValData::ValBool(boolean) => write!(f, "{boolean}"),
             ValData::ValObj(obj) => debug_print_obj(f, obj),
@@ -110,7 +131,7 @@ fn debug_print_obj(f: &mut std::fmt::Formatter<'_>, obj: &Rc<dyn Object>) -> std
     match obj.get_type() {
         crate::object::ObjType::ObjStringType => {
             let string = obj.get_string();
-            return write!(f, "{string}");
+            write!(f, "{string}")
         }
         _ => write!(f, "ValObj"),
     }
@@ -124,26 +145,27 @@ pub struct Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         if self.val_type != other.val_type {
-            return false;
+            false
         } else {
             match &self.data {
+                ValData::Void => false, 
                 ValData::ValNum(num) => match &other.data {
                     ValData::ValNum(other_num) => {
-                        return num == other_num;
+                        num == other_num
                     }
-                    _ => return false,
+                    _ => false,
                 },
                 ValData::ValBool(boolean) => match other.data {
                     ValData::ValBool(other_boolean) => {
-                        return *boolean == other_boolean;
+                        *boolean == other_boolean
                     }
-                    _ => return false,
+                    _ => false,
                 },
                 ValData::ValObj(box_of_object) => match &other.data {
                     ValData::ValObj(other_box_of_object) => {
-                        return box_of_object.get_type() == other_box_of_object.get_type();
+                        box_of_object.get_type() == other_box_of_object.get_type()
                     }
-                    _ => return false,
+                    _ => false,
                 },
             }
         }

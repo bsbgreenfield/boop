@@ -1,1 +1,5 @@
-print 1 + 1;
+void sayHello() {
+    print "hello";
+  }
+
+sayHello();

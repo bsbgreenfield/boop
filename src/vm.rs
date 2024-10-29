@@ -1,11 +1,11 @@
-use core::panic;
-use std::{rc::Rc, usize};
-
+use crate::compiler::{Compiler, Instruction, Operations};
+use crate::object::ObjFunction;
 use crate::{
-    compiler::{Compiler, Instruction, Operations},
     object::ObjString,
     value::{ValData, Value},
 };
+use core::panic;
+use std::rc::Rc;
 
 pub enum RuntimeError {
     BoopError,
@@ -35,8 +35,10 @@ impl<'a> Vm<'a> {
         instructions: &[Instruction],
         constants: &Vec<Value>,
         stack: &mut Vec<ValData>,
-        offset: usize,
+        instruction_offset: usize,
+        stack_offset: usize,
     ) -> InterpretResult {
+        use Operations::*;
         let mut breakpoints: Vec<(usize, usize)> = Vec::new();
         let mut idx = 0;
         loop {
@@ -44,9 +46,8 @@ impl<'a> Vm<'a> {
                 return InterpretResult::Done;
             }
             let current_instruction = &instructions[idx];
-            use Operations::*;
 
-            debug_vm(&instructions, idx, &stack);
+            debug_vm(instructions, idx, stack);
             match current_instruction {
                 Instruction::Operation(op) => match op {
                     Operations::OpConstant => {
@@ -83,13 +84,16 @@ impl<'a> Vm<'a> {
                     }
                     OpGetLocal => {
                         let constant_idx = get_constant_idx(&mut idx, instructions);
-                        let local: ValData = stack[constant_idx as usize].clone();
+                        // local variable will be indicated by the index in the local,
+                        // plus the stack offset + 1 (to account for stack frame and the function
+                        // obj at the start of the stack frame)
+                        let local: ValData = stack[constant_idx as usize + stack_offset].clone();
                         stack.push(local);
                     }
                     OpSetLocal => {
                         let constant_idx = get_constant_idx(&mut idx, instructions);
                         let new_value = stack.pop().unwrap();
-                        stack[constant_idx as usize] = new_value;
+                        stack[constant_idx as usize + stack_offset] = new_value;
                     }
                     OpPrint => {
                         stack.pop().unwrap().print_value();
@@ -145,18 +149,18 @@ impl<'a> Vm<'a> {
                         stack.pop();
                     }
                     OpJumpIfFalse => {
-                        let instruction_idx = get_instruction_idx(&mut idx, instructions, offset);
+                        let instruction_idx = get_instruction_idx(&mut idx, instructions, instruction_offset);
                         let condition = stack.pop().unwrap().unwrap_bool();
                         if !condition {
                             idx = instruction_idx - 1;
                         }
                     }
                     OpJump => {
-                        let instruction_idx = get_instruction_idx(&mut idx, instructions, offset);
+                        let instruction_idx = get_instruction_idx(&mut idx, instructions, instruction_offset);
                         idx = instruction_idx;
                     }
                     OpLoop => {
-                        let instruction_idx = get_instruction_idx(&mut idx, instructions, offset);
+                        let instruction_idx = get_instruction_idx(&mut idx, instructions, instruction_offset);
                         breakpoints.push((idx, instruction_idx - 1));
                     }
                     OpBreak => {
@@ -179,15 +183,20 @@ impl<'a> Vm<'a> {
                         }
                     }
                     OpLoopFor => {
+                        // loop count is at the top of the stack
                         let loop_count = stack.pop().unwrap().unwrap_int();
                         idx += 1; // 'OpLoop'
-                        let instruction_idx = get_instruction_idx(&mut idx, instructions, offset);
+                        // instruction idx of end of loop 
+                        let instruction_idx = get_instruction_idx(&mut idx, instructions, instruction_offset);
                         for _ in 0..loop_count {
+                            // call interpret with a incstruction slice containing only the loop
+                            // itself
                             match Self::interpret(
                                 &instructions[(idx - 1)..(instruction_idx)],
                                 constants,
                                 stack,
                                 idx - 1,
+                                0
                             ) {
                                 InterpretResult::Done => (),
                                 InterpretResult::Breaked => break,
@@ -195,6 +204,31 @@ impl<'a> Vm<'a> {
                         }
                         idx = instruction_idx - 1;
                     }
+                    OpCall =>  {
+                        let stack_size = get_constant_idx(&mut idx, instructions);
+                        let stack_offset = stack.len() - (stack_size as usize);
+                        println!("stack offset is {stack_offset}");
+                        let function_obj = &stack[stack_offset].clone();
+
+                        if let ValData::ValObj(rc_obj) = function_obj {
+                            // call interpret with stack_offset + 1 to account for the function obj
+                            // sitting in the first position of the stack
+                           Self::interpret(rc_obj.get_chunk().code.as_slice(), &rc_obj.get_chunk().constants, stack, 0, stack_offset + 1);
+                        } else {
+                            panic!("expected a function obj here");
+                        }
+
+                    }
+                    OpReturn => {
+                        let return_val = stack.pop().unwrap();
+                        let stack_size = stack.len() - (stack_offset - 1);
+                        // remove the functions parameters and function itself from the stack
+                        // then put the return val back on the top of the stack
+                        for _ in 0 .. stack_size {
+                            stack.pop();
+                        }
+                        stack.push(return_val);
+                    },
                 },
                 _ => panic!("expected an operation, got {:?}", current_instruction),
             }
@@ -204,9 +238,21 @@ impl<'a> Vm<'a> {
 
     pub fn run(&'a mut self) -> Result<(), RuntimeError> {
         self.compiler.compile();
-        debug_instructions(&self.compiler.code);
-        let instructions = &self.compiler.code;
-        Self::interpret(instructions, &self.compiler.constants, &mut self.stack, 0);
+        debug_instructions(&self.compiler.function_stack.first().unwrap().chunk.code);
+        let instructions = &self.compiler.function_stack.first().unwrap().chunk.code;
+        Self::interpret(
+            instructions,
+            &self
+                .compiler
+                .function_stack
+                .first()
+                .unwrap()
+                .chunk
+                .constants,
+            &mut self.stack,
+            0,
+            0
+        );
         Ok(())
     }
 }
@@ -220,6 +266,15 @@ fn get_constant_idx(idx: &mut usize, instructions: &[Instruction]) -> u8 {
 }
 
 fn get_instruction_idx(idx: &mut usize, instructions: &[Instruction], offset: usize) -> usize {
+    println!("******* calling instruction idk with an offset of {offset}");
+    // increment the instruction idx by one
+    // then return the value stored in the bytecode subtracted by the current instrcution offset of
+    // the Interpret call
+    //
+    // if this was inside of a loop_for call, we would be interpreting a SLICE of the overall
+    // instruction set that was offset by the indicated amount. if the intsruction set said 
+    // OP_LOOP 10, "10" refers to the absolute index of the instruction to jump to, but in the
+    // refernce frame of the subset of instructions we are currently executing, its 10 - offset
     *idx += 1;
     match instructions[*idx] {
         Instruction::InstructionIdx(idx) => idx - offset,
@@ -227,7 +282,7 @@ fn get_instruction_idx(idx: &mut usize, instructions: &[Instruction], offset: us
     }
 }
 
-fn debug_instructions(instructions: &Vec<Instruction>) {
+fn debug_instructions(instructions: &[Instruction]) {
     println!("_______________________________");
     for (idx, instruction) in instructions.iter().enumerate() {
         println!("{}: {:?}", idx, instruction);
@@ -252,8 +307,8 @@ fn debug_vm(instructions: &[Instruction], instr_idx: usize, stack: &Vec<ValData>
         },
         None => 0,
     };
-    match instruction {
-        Instruction::Operation(op) => match op {
+    if let Instruction::Operation(op) = instruction {
+        match op {
             OpConstant => {
                 print!("OP CONSTANT: {:?}      |     ", idx);
             }
@@ -280,6 +335,9 @@ fn debug_vm(instructions: &[Instruction], instr_idx: usize, stack: &Vec<ValData>
             }
             OpPrint => {
                 print!("OP_PRINT            |     ");
+            }
+            OpReturn => {
+                print!("OP_RETURN           |     ");
             }
             OpAnd => {
                 print!("OP_AND           |     ");
@@ -334,8 +392,10 @@ fn debug_vm(instructions: &[Instruction], instr_idx: usize, stack: &Vec<ValData>
                     stack.last().unwrap().unwrap_int()
                 );
             }
-        },
-        _ => (),
+            OpCall => {
+                print!("OP_CALL           |     ",);
+            }
+        }
     }
     println!("{:?}", stack);
 }
