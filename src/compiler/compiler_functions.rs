@@ -31,6 +31,8 @@ pub fn prec_of(operation: &Operations) -> Precedence {
         OpNotEquals => PrecEquality,
         OpLessEquals => PrecComparison,
         OpGreaterEquals => PrecComparison,
+        OpCall => PrecCall,
+        OpReturn => PrecNone
     }
 }
 
@@ -47,9 +49,6 @@ pub fn is_group_start(token: &Token) -> bool {
     matches!(token, Token::TkOpenParen)
 }
 
-pub fn is_group_end(token: &Token) -> bool {
-    matches!(token, Token::TkCloseParen)
-}
 
 pub fn can_add_or_subtract(
     operand_1: ValType,
@@ -123,6 +122,7 @@ pub fn match_val_type(val_ident: &str) -> ValType {
         "int" => ValType::ValNumType,
         "String" => ValType::ValStringType,
         "bool" => ValType::ValBoolType,
+        "void" => ValType::ValVoidType,
         _ => panic!("havent implemented this type!!!"),
     }
 }

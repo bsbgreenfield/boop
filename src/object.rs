@@ -22,6 +22,18 @@ pub trait Object {
     fn get_string(&self) -> &str {
         panic!("get_string unimplemented for this type of object");
     }
+
+    fn get_parameters(&self) -> &[ValType] {
+        panic!("can only get parameters from an objFunction");
+    }
+
+    fn get_return_type(&self) -> ValType {
+        panic!("can only get the return type of an objFunction");
+    }
+
+    fn get_chunk(&self) -> &Chunk {
+        panic!("can only get the chunk associated wtih an objfunction");
+    }
 }
 
 pub struct ObjString {
@@ -64,16 +76,35 @@ pub struct ObjFunction {
     pub f_type: FunctionType,
     pub parameters: Vec<ValType>,
     pub chunk: Chunk,
+    pub return_type: ValType
 }
 
-impl Object for ObjFunction {}
+impl Object for ObjFunction {
+
+    fn get_string(&self) -> &str {
+        "ObjFunction"
+    } 
+    fn get_parameters(&self) -> &[ValType] {
+        self.parameters.as_slice()
+    }
+
+    fn get_return_type(&self) -> ValType {
+        self.return_type
+    }
+
+    fn get_chunk(&self) -> &Chunk {
+        &self.chunk
+    }
+    
+}
 
 impl ObjFunction {
-    pub fn new(f_type: FunctionType) -> Self {
+    pub fn new(f_type: FunctionType, return_type: ValType) -> Self {
         ObjFunction {
             f_type,
             chunk: Chunk::new(),
             parameters : Vec::<ValType>::new(),
+            return_type
         }
     }
 

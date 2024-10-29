@@ -26,6 +26,7 @@ fn generate_keyword_hash() -> HashMap<&'static str, Token> {
     result.insert("loop", Token::TkLoop);
     result.insert("break", Token::TkBreak);
     result.insert("continue", Token::TkContinue);
+    result.insert("return", Token::TkReturn);
 
     result
 }
@@ -36,6 +37,7 @@ fn generate_type_hash() -> HashSet<&'static str> {
     result.insert("int");
     result.insert("String");
     result.insert("bool");
+    result.insert("void");
 
     result
 }
@@ -80,6 +82,7 @@ pub enum Token {
     TkPrint,
     TkEof,
     TkErr,
+    TkReturn,
 }
 
 pub struct Parser<'a> {
@@ -181,6 +184,7 @@ impl<'a> Parser<'a> {
             'p' => return self.match_keyword("print", 1),
             'i' => return self.match_keyword("if", 1),
             'l' => return self.match_keyword("loop", 1),
+            'r' => return self.match_keyword("return", 1),
             _ => None,
         }
     }
@@ -210,7 +214,7 @@ impl<'a> Parser<'a> {
                 return Some(char);
             }
         }
-        return None;
+        None
     }
 
     fn try_parse_string(&mut self) -> Option<Token> {
@@ -221,13 +225,13 @@ impl<'a> Parser<'a> {
                 continue;
             }
         }
-        return None;
+        None
     }
 
     fn try_parse_identifier(&mut self) -> Option<Token> {
         while let Some(char) = self.code_iter.peek() {
             match char {
-                '"' | '+' | '-' | '*' | '/' | '(' | ')' | ' ' | ';' => {
+                '"' | '+' | '-' | '*' | '/' | '(' | ')' | ' ' | ';' | ',' => {
                     if TYPE_HASH.contains(self.get_curr_slice()) {
                         return Some(Token::TkTypeIdent);
                     }
@@ -236,7 +240,7 @@ impl<'a> Parser<'a> {
                 _ => self.next_char(),
             };
         }
-        return None;
+        None
     }
 
     pub fn peek(&mut self) -> Option<Token> {
@@ -262,8 +266,8 @@ impl<'a> Parser<'a> {
         let maybe_token = self.next_token();
         match maybe_token {
             Some(token) => match token {
-                Token::TkIdentifier => println!("{:?}: {}", token, self.get_curr_slice()),
-                _ => () //println!("{:?}", token),
+                Token::TkIdentifier =>  println!("{:?}: {}", token, self.get_curr_slice()),
+                _ => println!("{:?}", token),
             },
 
             None => println!("EOF"),

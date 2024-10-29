@@ -10,6 +10,7 @@ pub enum ValType {
     ValBoolType,
     ValStringType,
     ValFunctionType,
+    ValVoidType
 }
 
 
@@ -27,6 +28,7 @@ impl ValType {
 }
 
 pub enum ValData {
+    Void,
     ValNum(i32),
     ValBool(bool),
     ValObj(Rc<dyn Object>), // this will almost certainly have to be an RC to account for
@@ -62,6 +64,7 @@ impl ValData {
 
     pub fn print_value(&self) {
         match self {
+            ValData::Void => println!("void"),
             ValData::ValNum(num) => println!("{num}"),
             ValData::ValBool(boolean) => println!("{boolean}"),
             ValData::ValObj(obj) => match obj.get_type() {
@@ -75,6 +78,7 @@ impl ValData {
 
     pub fn compare_value(&self, other: &Self) -> bool {
         match self {
+            ValData::Void => false,
             ValData::ValNum(num) => *num == other.unwrap_int(),
             ValData::ValBool(boolean) => *boolean == other.unwrap_bool(),
             ValData::ValObj(obj) => Self::compare_objs(obj, other),
@@ -104,6 +108,7 @@ impl ValData {
 impl Clone for ValData {
     fn clone(&self) -> Self {
         match self {
+            ValData::Void => ValData::Void,
             ValData::ValNum(num) => ValData::ValNum(*num),
             ValData::ValBool(boolean) => ValData::ValBool(*boolean),
             ValData::ValObj(obj) => ValData::ValObj(Rc::clone(obj)),
@@ -114,6 +119,7 @@ impl Clone for ValData {
 impl Debug for ValData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ValData::Void => write!(f, "void"),
             ValData::ValNum(num) => write!(f, "{num}"),
             ValData::ValBool(boolean) => write!(f, "{boolean}"),
             ValData::ValObj(obj) => debug_print_obj(f, obj),
@@ -142,6 +148,7 @@ impl PartialEq for Value {
             false
         } else {
             match &self.data {
+                ValData::Void => false, 
                 ValData::ValNum(num) => match &other.data {
                     ValData::ValNum(other_num) => {
                         num == other_num

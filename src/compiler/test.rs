@@ -1,6 +1,5 @@
 use crate::compiler::*;
 use Operations::*;
-use Instruction;
 use std::fmt::Write;
 
     #[test]

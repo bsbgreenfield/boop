@@ -45,7 +45,16 @@ pub enum Operations {
     OpGetLocal,
     OpSetLocal,
     OpPrint,
+    OpCall,
+    OpReturn
 }
+
+#[derive(Debug, PartialEq)]
+enum VarDecResult {
+    FunctionDec,
+    VariableDec,
+}
+
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
 enum Precedence {
     PrecNone,

@@ -1,3 +1,5 @@
+use core::panic;
+
 use crate::compiler::*;
 impl<'a> Compiler<'a> {
     fn expr_first_token(
@@ -28,10 +30,21 @@ impl<'a> Compiler<'a> {
                     if match_token(self.parser.peek(), Token::TkEquals) {
                         ExprResult::Assignment(self.assignment())
                     } else {
-                        self.compile_operand(&first_token, operand_type_stack);
+                        let constant_idx = self.compile_operand(&first_token, operand_type_stack);
                         // check for the end of the expression.
                         if match_token(self.parser.peek(), expected_end_token) {
+                            println!("expression has ended");
                             ExprResult::Done(*operand_type_stack.first().unwrap())
+                        } else if match_token(self.parser.peek(), Token::TkOpenParen) {
+                            let return_type = self.function_call(constant_idx);
+                            operand_type_stack.pop();
+                            operand_type_stack.push(return_type);
+                            if match_token(self.parser.peek(), expected_end_token) {
+                                println!("got to the end of call!!!!");
+                                ExprResult::Done(return_type)
+                            } else {
+                                ExprResult::ParsedOperand
+                            }
                         } else {
                             ExprResult::ParsedOperand
                         }
@@ -126,8 +139,21 @@ impl<'a> Compiler<'a> {
                         }
 
                         // compile operand
-                        self.compile_operand(&token, &mut operand_type_stack);
+                        let constant_idx = self.compile_operand(&token, &mut operand_type_stack);
                         operand_phase = false;
+
+                        // postfix
+                        if let Some(postfix) = self.parser.peek() {
+                            if postfix == Token::TkOpenParen {
+                                let return_type = self.function_call(constant_idx);
+                                // replace the ObjFunction with the return type of the function
+                                operand_type_stack.pop();
+                                operand_type_stack.push(return_type);
+                                // TODO: when this is called in the vm, we have to remember to pop
+                                // the function AND all its arguments OFF the stack, and replace it
+                                // with the return value of the function
+                            }
+                        }
 
                         // check for group end
                         if let Some(result) = self.expr_check_group_end(
@@ -178,7 +204,7 @@ impl<'a> Compiler<'a> {
         return *operand_type_stack.first().unwrap();
     }
 
-    fn assert_is_constant(&self, token: &Token) {
+    pub fn assert_is_constant(&self, token: &Token) {
         use Token::*;
         assert!(matches!(
             token,
@@ -186,21 +212,27 @@ impl<'a> Compiler<'a> {
         ));
     }
 
-    pub fn compile_operand(&mut self, token: &Token, operand_type_stack: &mut Vec<ValType>) {
+    pub fn compile_operand(
+        &mut self,
+        token: &Token,
+        operand_type_stack: &mut Vec<ValType>,
+    ) -> usize {
         self.assert_is_constant(token);
         // if this is a variable, get local, else emit constant
         if token == &Token::TkIdentifier {
             let ident = self.parser.get_curr_slice();
-            let idx = self.has_variable(ident).unwrap();
+            let idx = self.has_variable(ident).expect("invalid variable name");
             self.emit_get_local(idx);
             push_type(
                 self.current_chunk_ref().locals[idx].val_type,
                 operand_type_stack,
             );
+            idx
         } else {
-            self.emit_constant(token);
+            self.emit_constant_from_token(token);
             let new_val_ref = self.current_chunk_ref().constants.last().unwrap();
             push_type_of_val(new_val_ref, operand_type_stack);
+            self.current_chunk_ref().constants.len()
         }
     }
 
@@ -336,7 +368,9 @@ impl<'a> Compiler<'a> {
                         | Operations::OpLoopFor
                         | Operations::OpBreak
                         | Operations::OpContinue
-                        | Operations::OpJumpIfFalse => (),
+                        | Operations::OpCall
+                        | Operations::OpReturn
+                        | Operations::OpJumpIfFalse => panic!("expected an operator operation! got {:?}", operation)
                     }
                 }
             }

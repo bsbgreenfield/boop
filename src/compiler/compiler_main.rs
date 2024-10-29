@@ -1,5 +1,6 @@
 use crate::compiler::*;
 use crate::value;
+use core::panic;
 use std::rc::Rc;
 impl<'a> Compiler<'a> {
     pub fn new(code: &'a str) -> Self {
@@ -9,13 +10,16 @@ impl<'a> Compiler<'a> {
         types.insert(String::from("String"));
         Compiler {
             parser: Parser::new(code),
-            function_stack: vec![ObjFunction::new(crate::object::FunctionType::Script)],
+            function_stack: vec![ObjFunction::new(
+                crate::object::FunctionType::Script,
+                ValType::ValVoidType,
+            )],
             types,
             scope_depth: 0,
         }
     }
 
-    fn current_chunk_mut(&mut self) -> &mut Chunk {
+    pub fn current_chunk_mut(&mut self) -> &mut Chunk {
         &mut self.function_stack.last_mut().unwrap().chunk
     }
     pub fn current_chunk_ref(&self) -> &Chunk {
@@ -117,9 +121,22 @@ impl<'a> Compiler<'a> {
             .push(Instruction::from_instruction_idx(idx));
     }
 
-    pub fn emit_constant(&mut self, token: &Token) {
+    pub fn emit_constant_from_token(&mut self, token: &Token) {
         let val: Value = self.token_to_val(token);
 
+        if let Ok(idx) = self.make_constant(val) {
+            self.current_chunk_mut()
+                .code
+                .push(Instruction::Operation(Operations::OpConstant));
+            self.current_chunk_mut()
+                .code
+                .push(Instruction::ConstantIdx(idx));
+        } else {
+            panic!("error in alocating constant");
+        }
+    }
+
+    fn emit_constant_from_val(&mut self, val: Value) {
         if let Ok(idx) = self.make_constant(val) {
             self.current_chunk_mut()
                 .code
@@ -150,6 +167,26 @@ impl<'a> Compiler<'a> {
             .push(Instruction::from_constant_idx(idx.try_into().unwrap()));
     }
 
+    fn emit_function_constant(&mut self, function: ObjFunction) {
+        if let Ok(idx) = self.make_constant(Value {
+            val_type: ValType::ValFunctionType,
+            data: ValData::ValObj(Rc::new(function)),
+        }) {
+            self.current_chunk_mut()
+                .code
+                .push(Instruction::Operation(Operations::OpConstant));
+            self.current_chunk_mut()
+                .code
+                .push(Instruction::ConstantIdx(idx));
+        } else {
+            panic!("failed to add function to the constants table");
+        }
+    }
+    
+    fn emit_call(&mut self, offset: u8){
+       self.current_chunk_mut().code.push(Instruction::from_operation(Operations::OpCall)); 
+        self.current_chunk_mut().code.push(Instruction::from_constant_idx(offset));
+    }
     pub fn emit_operation(&mut self, operation: Operations) {
         self.current_chunk_mut()
             .code
@@ -238,7 +275,11 @@ impl<'a> Compiler<'a> {
                     self.expression_statement();
                 }
                 Token::TkFor => todo!(),
-                Token::TkTypeIdent => self.variable_declaration(),
+                Token::TkTypeIdent => {
+                   if self.variable_declaration() == VarDecResult::FunctionDec {
+                        return true;
+                    }
+                },
                 Token::TkIdentifier => self.expression_statement(),
                 Token::TkPrint => self.print_statement(),
                 // statements that dont require semicolons at the end
@@ -264,6 +305,9 @@ impl<'a> Compiler<'a> {
                     self.emit_operation(Operations::OpContinue);
                     return true;
                 }
+                Token::TkReturn => {
+                    self.return_statement();
+                }
                 Token::TkElse => panic!("else statements must be preceded by an 'if' "),
                 Token::TkPlus
                 | Token::TkMinus
@@ -284,17 +328,10 @@ impl<'a> Compiler<'a> {
                 | Token::TkLessEquals
                 | Token::TkGreaterEquals
                 | Token::TkCloseParen => {
-                    panic!("expected a statement or expression");
+                    panic!("expected a statement or expression, got {:?}", token );
                 }
             }
 
-            //TODO: a more elegant way of searching for a function dec, which doesnt require a
-            //semicolon?
-            if self.current_chunk_ref().constants.last().unwrap().val_type
-                == ValType::ValFunctionType
-            {
-                return true;
-            }
             if let Some(maybe_semicolon) = self.parser.parse_next() {
                 match maybe_semicolon {
                     Token::TkSemicolon => true,
@@ -441,7 +478,7 @@ impl<'a> Compiler<'a> {
         None
     }
 
-    pub fn variable_declaration(&mut self) {
+    pub fn variable_declaration(&mut self) -> VarDecResult {
         self.parser.parse_next(); // type ident
         let var_type = match_val_type(self.parser.get_curr_slice()); // grab type name
         self.parser.parse_next(); // identifier
@@ -462,35 +499,76 @@ impl<'a> Compiler<'a> {
                 }
                 let local = Local::new(name, self.scope_depth, var_type);
                 self.current_chunk_mut().locals.push(local);
+                VarDecResult::VariableDec
             }
             Token::TkOpenParen => {
                 let function_local = Local::new(name, self.scope_depth, ValType::ValFunctionType);
+                println!("PUSHING {:?} to locals", function_local);
                 self.current_chunk_mut().locals.push(function_local);
-                //TODO:: function needs to know its own name?
-                let mut function = ObjFunction::new(crate::object::FunctionType::Function);
-                let parameters: Vec<ValType> = self.parse_function_params(&mut function);
-                function.set_params(parameters);
+                let mut function =
+                    ObjFunction::new(crate::object::FunctionType::Function, var_type);
 
                 // compile the function, and once done, put it in this the enclosing function's
                 // constants table
                 function = self.compile_function(function);
-                let _ = self.make_constant(Value {
-                    val_type: ValType::ValFunctionType,
-                    data: ValData::ValObj(Rc::new(function)),
-                });
+                self.emit_function_constant(function);
+                VarDecResult::FunctionDec
             }
             _ => panic!("Expected a '=' or an open parentheses"),
         }
     }
 
-    fn compile_function(&mut self, new_function: ObjFunction) -> ObjFunction {
-        // takes a function and gives it back
-        self.function_stack.push(new_function);
-        self.block();
-        self.function_stack.pop().unwrap()
+    fn return_statement(&mut self) {
+        // parse return expression and put its value at the top of the stack
+        // panic if the value resulting from the expression doesnt match the
+        // stated return type of the function
+
+        // consume the return
+        self.parser.parse_next();
+        let return_type = self.expression(Token::TkSemicolon);
+        if return_type != self.function_stack.last().unwrap().return_type {
+            panic!(
+                "expected a return type of {:?}, got {:?}",
+                self.function_stack.last().unwrap().return_type,
+                return_type
+            );
+        }
+        self.emit_operation(Operations::OpReturn);
     }
 
-    fn parse_function_params(&mut self, function: &mut ObjFunction) -> Vec<ValType> {
+    fn compile_function(&mut self, new_function: ObjFunction) -> ObjFunction {
+        // add new function to the top of the function stack
+        self.function_stack.push(new_function);
+        // parse the function parameters
+        let params = self.parse_function_params();
+        println!("got {:?} params from function!", params);
+        // parse the function body
+        self.block();
+
+        // implicit void return
+        let function_instructions_rev_iter = self.function_stack.last().unwrap().chunk.code.iter().rev();
+        let mut has_return = false; 
+        for instr in function_instructions_rev_iter {
+           if instr == &Instruction::from_operation(Operations::OpReturn){
+                has_return = true;
+                break;
+            }
+        }
+        if !has_return {
+            assert!(self.function_stack.last().unwrap().return_type == ValType::ValVoidType, "did not find a return statement for this non void returning funtion");
+            //TODO: should this be a unique valdata enum value?
+            self.emit_constant_from_val(Value::new(ValType::ValVoidType, ValData::Void));
+        }
+        
+
+        let mut function = self.function_stack.pop().unwrap();
+        // set the params
+        function.set_params(params);
+        // return the function
+        function
+    }
+
+    fn parse_function_params(&mut self) -> Vec<ValType> {
         let mut parameters = Vec::new();
         loop {
             match self.parser.parse_next() {
@@ -516,9 +594,79 @@ impl<'a> Compiler<'a> {
         parameters
     }
 
+    fn compile_argument(&mut self, token: &Token) -> ValType {
+        // resolve the constant as a literal or local variable
+        // call get_local or OP_CONSTANT to ensure that the arg is at the top of the stack
+        // return the ValType of the arg value
+        self.assert_is_constant(token);
+        // if this is a variable, get local, else emit constant
+        if token == &Token::TkIdentifier {
+            let ident = self.parser.get_curr_slice();
+            let idx = self.has_variable(ident).unwrap();
+            self.emit_get_local(idx);
+            self.current_chunk_ref().constants[idx].val_type
+        } else {
+            self.emit_constant_from_token(token);
+            self.current_chunk_ref().constants.last().unwrap().val_type
+        }
+    }
+
+    pub fn function_call(&mut self, function_idx: usize) -> ValType {
+        // at the time of calling, the function will be at the top of the stack
+        let mut return_type: ValType = ValType::ValVoidType;
+        // consume the open paren
+        self.parser.parse_next();
+        let mut argument_count = 0;
+        if !match_token(self.parser.peek(), Token::TkCloseParen) {
+            let params;
+            // I think TECHNICALLY the most efficient way to do this is to have parameters on
+            // ObjFunction be an Rc<[ValType]> and then just clone the rc instead of copying over the
+            // data with .to_owned().
+            if let ValData::ValObj(rc_obj) = &self.current_chunk_ref().constants[function_idx].data
+            {
+                params = rc_obj.get_parameters().to_owned();
+                return_type = rc_obj.get_return_type();
+            } else {
+                panic!("expected a function object");
+            }
+
+            // loop through the provided arguments, checking types and length
+            loop {
+                let param_type = params[argument_count];
+                if let Some(argument_token) = self.parser.parse_next() {
+                    let arg_type = self.compile_argument(&argument_token);
+                    assert!(
+                        param_type == arg_type,
+                        "argument type {:?} does not match expected type {:?}",
+                        arg_type,
+                        param_type
+                    );
+                    argument_count += 1;
+                    if match_token(self.parser.peek(), Token::TkCloseParen) {
+                        // consume the close paren
+                        self.parser.parse_next();
+                        assert!(params.len() == argument_count);
+                        break;
+                    } else {
+                        assert!(arg_type == param_type);
+                        // consume the comma
+                        self.parser.parse_next();
+                    }
+                }
+            }
+        } else {
+            // this is a close paren, consume it.
+            println!("THIs is a close paren!!!!! {:?}", self.parser.peek());
+            self.parser.parse_next();
+        }
+        self.emit_call((argument_count + 1) as u8);
+
+        
+        return_type
+    }
+
     pub fn expression_statement(&mut self) {
         self.expression(Token::TkSemicolon);
-
         // for set expression, we already the stack to move the value of the expression into the
         // local slot
         let idx = self.current_chunk_ref().code.len() - 2;
@@ -547,7 +695,4 @@ impl<'a> Compiler<'a> {
         self.emit_set_local(local_idx);
         return_type
     }
-
-
 }
-
