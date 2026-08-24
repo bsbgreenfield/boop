@@ -1,5 +1,7 @@
-void sayHello() {
-    print "hello";
+void sayHello(int x, int y) {
+	int myNumber = x + y;
+
+	print myNumber;
   }
 
-sayHello();
+sayHello(3);

@@ -182,10 +182,14 @@ impl<'a> Compiler<'a> {
             panic!("failed to add function to the constants table");
         }
     }
-    
-    fn emit_call(&mut self, offset: u8){
-       self.current_chunk_mut().code.push(Instruction::from_operation(Operations::OpCall)); 
-        self.current_chunk_mut().code.push(Instruction::from_constant_idx(offset));
+
+    fn emit_call(&mut self, offset: u8) {
+        self.current_chunk_mut()
+            .code
+            .push(Instruction::from_operation(Operations::OpCall));
+        self.current_chunk_mut()
+            .code
+            .push(Instruction::from_constant_idx(offset));
     }
     pub fn emit_operation(&mut self, operation: Operations) {
         self.current_chunk_mut()
@@ -276,10 +280,10 @@ impl<'a> Compiler<'a> {
                 }
                 Token::TkFor => todo!(),
                 Token::TkTypeIdent => {
-                   if self.variable_declaration() == VarDecResult::FunctionDec {
+                    if self.variable_declaration() == VarDecResult::FunctionDec {
                         return true;
                     }
-                },
+                }
                 Token::TkIdentifier => self.expression_statement(),
                 Token::TkPrint => self.print_statement(),
                 // statements that dont require semicolons at the end
@@ -328,7 +332,7 @@ impl<'a> Compiler<'a> {
                 | Token::TkLessEquals
                 | Token::TkGreaterEquals
                 | Token::TkCloseParen => {
-                    panic!("expected a statement or expression, got {:?}", token );
+                    panic!("expected a statement or expression, got {:?}", token);
                 }
             }
 
@@ -546,20 +550,23 @@ impl<'a> Compiler<'a> {
         self.block();
 
         // implicit void return
-        let function_instructions_rev_iter = self.function_stack.last().unwrap().chunk.code.iter().rev();
-        let mut has_return = false; 
+        let function_instructions_rev_iter =
+            self.function_stack.last().unwrap().chunk.code.iter().rev();
+        let mut has_return = false;
         for instr in function_instructions_rev_iter {
-           if instr == &Instruction::from_operation(Operations::OpReturn){
+            if instr == &Instruction::from_operation(Operations::OpReturn) {
                 has_return = true;
                 break;
             }
         }
         if !has_return {
-            assert!(self.function_stack.last().unwrap().return_type == ValType::ValVoidType, "did not find a return statement for this non void returning funtion");
+            assert!(
+                self.function_stack.last().unwrap().return_type == ValType::ValVoidType,
+                "did not find a return statement for this non void returning funtion"
+            );
             //TODO: should this be a unique valdata enum value?
             self.emit_constant_from_val(Value::new(ValType::ValVoidType, ValData::Void));
         }
-        
 
         let mut function = self.function_stack.pop().unwrap();
         // set the params
@@ -604,7 +611,7 @@ impl<'a> Compiler<'a> {
             let ident = self.parser.get_curr_slice();
             let idx = self.has_variable(ident).unwrap();
             self.emit_get_local(idx);
-            self.current_chunk_ref().constants[idx].val_type
+            self.current_chunk_ref().locals[idx].val_type
         } else {
             self.emit_constant_from_token(token);
             self.current_chunk_ref().constants.last().unwrap().val_type
@@ -645,7 +652,12 @@ impl<'a> Compiler<'a> {
                     if match_token(self.parser.peek(), Token::TkCloseParen) {
                         // consume the close paren
                         self.parser.parse_next();
-                        assert!(params.len() == argument_count);
+                        assert!(
+                            params.len() == argument_count,
+                            "Expected {} arguments, got {}",
+                            params.len(),
+                            argument_count
+                        );
                         break;
                     } else {
                         assert!(arg_type == param_type);
@@ -661,7 +673,6 @@ impl<'a> Compiler<'a> {
         }
         self.emit_call((argument_count + 1) as u8);
 
-        
         return_type
     }
 

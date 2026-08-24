@@ -370,7 +370,9 @@ impl<'a> Compiler<'a> {
                         | Operations::OpContinue
                         | Operations::OpCall
                         | Operations::OpReturn
-                        | Operations::OpJumpIfFalse => panic!("expected an operator operation! got {:?}", operation)
+                        | Operations::OpJumpIfFalse => {
+                            panic!("expected an operator operation! got {:?}", operation)
+                        }
                     }
                 }
             }

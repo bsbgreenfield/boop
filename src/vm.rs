@@ -149,18 +149,21 @@ impl<'a> Vm<'a> {
                         stack.pop();
                     }
                     OpJumpIfFalse => {
-                        let instruction_idx = get_instruction_idx(&mut idx, instructions, instruction_offset);
+                        let instruction_idx =
+                            get_instruction_idx(&mut idx, instructions, instruction_offset);
                         let condition = stack.pop().unwrap().unwrap_bool();
                         if !condition {
                             idx = instruction_idx - 1;
                         }
                     }
                     OpJump => {
-                        let instruction_idx = get_instruction_idx(&mut idx, instructions, instruction_offset);
+                        let instruction_idx =
+                            get_instruction_idx(&mut idx, instructions, instruction_offset);
                         idx = instruction_idx;
                     }
                     OpLoop => {
-                        let instruction_idx = get_instruction_idx(&mut idx, instructions, instruction_offset);
+                        let instruction_idx =
+                            get_instruction_idx(&mut idx, instructions, instruction_offset);
                         breakpoints.push((idx, instruction_idx - 1));
                     }
                     OpBreak => {
@@ -186,8 +189,9 @@ impl<'a> Vm<'a> {
                         // loop count is at the top of the stack
                         let loop_count = stack.pop().unwrap().unwrap_int();
                         idx += 1; // 'OpLoop'
-                        // instruction idx of end of loop 
-                        let instruction_idx = get_instruction_idx(&mut idx, instructions, instruction_offset);
+                                  // instruction idx of end of loop
+                        let instruction_idx =
+                            get_instruction_idx(&mut idx, instructions, instruction_offset);
                         for _ in 0..loop_count {
                             // call interpret with a incstruction slice containing only the loop
                             // itself
@@ -196,7 +200,7 @@ impl<'a> Vm<'a> {
                                 constants,
                                 stack,
                                 idx - 1,
-                                0
+                                stack_offset,
                             ) {
                                 InterpretResult::Done => (),
                                 InterpretResult::Breaked => break,
@@ -204,7 +208,7 @@ impl<'a> Vm<'a> {
                         }
                         idx = instruction_idx - 1;
                     }
-                    OpCall =>  {
+                    OpCall => {
                         let stack_size = get_constant_idx(&mut idx, instructions);
                         let stack_offset = stack.len() - (stack_size as usize);
                         println!("stack offset is {stack_offset}");
@@ -213,22 +217,27 @@ impl<'a> Vm<'a> {
                         if let ValData::ValObj(rc_obj) = function_obj {
                             // call interpret with stack_offset + 1 to account for the function obj
                             // sitting in the first position of the stack
-                           Self::interpret(rc_obj.get_chunk().code.as_slice(), &rc_obj.get_chunk().constants, stack, 0, stack_offset + 1);
+                            Self::interpret(
+                                rc_obj.get_chunk().code.as_slice(),
+                                &rc_obj.get_chunk().constants,
+                                stack,
+                                0,
+                                stack_offset + 1,
+                            );
                         } else {
                             panic!("expected a function obj here");
                         }
-
                     }
                     OpReturn => {
                         let return_val = stack.pop().unwrap();
                         let stack_size = stack.len() - (stack_offset - 1);
                         // remove the functions parameters and function itself from the stack
                         // then put the return val back on the top of the stack
-                        for _ in 0 .. stack_size {
+                        for _ in 0..stack_size {
                             stack.pop();
                         }
                         stack.push(return_val);
-                    },
+                    }
                 },
                 _ => panic!("expected an operation, got {:?}", current_instruction),
             }
@@ -251,7 +260,7 @@ impl<'a> Vm<'a> {
                 .constants,
             &mut self.stack,
             0,
-            0
+            0,
         );
         Ok(())
     }
@@ -272,7 +281,7 @@ fn get_instruction_idx(idx: &mut usize, instructions: &[Instruction], offset: us
     // the Interpret call
     //
     // if this was inside of a loop_for call, we would be interpreting a SLICE of the overall
-    // instruction set that was offset by the indicated amount. if the intsruction set said 
+    // instruction set that was offset by the indicated amount. if the intsruction set said
     // OP_LOOP 10, "10" refers to the absolute index of the instruction to jump to, but in the
     // refernce frame of the subset of instructions we are currently executing, its 10 - offset
     *idx += 1;
