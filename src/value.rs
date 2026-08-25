@@ -2,7 +2,10 @@
 use core::panic;
 use std::{fmt::Debug, rc::Rc};
 
-use crate::object::{ObjString, Object};
+use crate::{
+    capture::emit,
+    object::{ObjString, Object},
+};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ValType {
@@ -10,19 +13,18 @@ pub enum ValType {
     ValBoolType,
     ValStringType,
     ValFunctionType,
-    ValVoidType
+    ValVoidType,
 }
 
-
-// TODO: make this more efficient by either making another hash set, 
+// TODO: make this more efficient by either making another hash set,
 // implementing an incremental search, or hardcoding these valtypes in the Tokens.
 impl ValType {
     pub fn from_str(type_lexeme: &str) -> Self {
         match type_lexeme {
-           "String" => ValType::ValStringType,
-           "int" => ValType::ValNumType,
-           "bool" => ValType::ValBoolType,
-           _ => panic!("unimplemented"),
+            "String" => ValType::ValStringType,
+            "int" => ValType::ValNumType,
+            "bool" => ValType::ValBoolType,
+            _ => panic!("unimplemented"),
         }
     }
 }
@@ -64,12 +66,12 @@ impl ValData {
 
     pub fn print_value(&self) {
         match self {
-            ValData::Void => println!("void"),
-            ValData::ValNum(num) => println!("{num}"),
-            ValData::ValBool(boolean) => println!("{boolean}"),
+            ValData::Void => emit("void"),
+            ValData::ValNum(num) => emit("{num}"),
+            ValData::ValBool(boolean) => emit("{boolean}"),
             ValData::ValObj(obj) => match obj.get_type() {
                 crate::object::ObjType::ObjStringType => {
-                    println!("{}", obj.get_string());
+                    emit(obj.get_string());
                 }
                 _ => panic!("printing has not yet been implemented for this type!"),
             },
@@ -148,17 +150,13 @@ impl PartialEq for Value {
             false
         } else {
             match &self.data {
-                ValData::Void => false, 
+                ValData::Void => false,
                 ValData::ValNum(num) => match &other.data {
-                    ValData::ValNum(other_num) => {
-                        num == other_num
-                    }
+                    ValData::ValNum(other_num) => num == other_num,
                     _ => false,
                 },
                 ValData::ValBool(boolean) => match other.data {
-                    ValData::ValBool(other_boolean) => {
-                        *boolean == other_boolean
-                    }
+                    ValData::ValBool(other_boolean) => *boolean == other_boolean,
                     _ => false,
                 },
                 ValData::ValObj(box_of_object) => match &other.data {

@@ -1,3 +1,4 @@
+use crate::capture::is_capturing;
 use crate::compiler::{Compiler, Instruction, Operations};
 use crate::object::ObjFunction;
 use crate::{
@@ -211,7 +212,6 @@ impl<'a> Vm<'a> {
                     OpCall => {
                         let stack_size = get_constant_idx(&mut idx, instructions);
                         let stack_offset = stack.len() - (stack_size as usize);
-                        println!("stack offset is {stack_offset}");
                         let function_obj = &stack[stack_offset].clone();
 
                         if let ValData::ValObj(rc_obj) = function_obj {
@@ -275,7 +275,6 @@ fn get_constant_idx(idx: &mut usize, instructions: &[Instruction]) -> u8 {
 }
 
 fn get_instruction_idx(idx: &mut usize, instructions: &[Instruction], offset: usize) -> usize {
-    println!("******* calling instruction idk with an offset of {offset}");
     // increment the instruction idx by one
     // then return the value stored in the bytecode subtracted by the current instrcution offset of
     // the Interpret call
@@ -292,6 +291,9 @@ fn get_instruction_idx(idx: &mut usize, instructions: &[Instruction], offset: us
 }
 
 fn debug_instructions(instructions: &[Instruction]) {
+    if is_capturing() {
+        return;
+    }
     println!("_______________________________");
     for (idx, instruction) in instructions.iter().enumerate() {
         println!("{}: {:?}", idx, instruction);
@@ -300,6 +302,9 @@ fn debug_instructions(instructions: &[Instruction]) {
 }
 
 fn debug_vm(instructions: &[Instruction], instr_idx: usize, stack: &Vec<ValData>) {
+    if is_capturing() {
+        return;
+    }
     use Operations::*;
     let instruction = &instructions[instr_idx];
     let next_instruction;

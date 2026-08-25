@@ -1,10 +1,4 @@
-use vm::Vm;
-mod compiler;
-mod object;
-mod parser;
-mod r#type;
-mod value;
-mod vm;
+use boop::vm::Vm;
 use std::fs::File;
 use std::io::Read;
 

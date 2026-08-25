@@ -3,4 +3,12 @@ name = "Boop"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
+[lib]
+name = "boop"
+crate-type = ["cdylib", "rlib"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
+
+
